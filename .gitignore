@@ -1,0 +1,6 @@
+# Godot editor/import cache
+.godot/
+
+# Local exports and recordings
+builds/
+*.avi
