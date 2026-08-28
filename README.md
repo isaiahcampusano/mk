@@ -1,5 +1,8 @@
 # MK Circuit
 
+![Uploading image.png…]()
+
+
 A complete, self-contained Godot 4 MVP of a two-kart top-down racer. The track
 is inspired by Mario Circuit 3 without copying its art or exact geometry.
 
