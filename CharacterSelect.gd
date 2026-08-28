@@ -18,8 +18,11 @@ func build_screen() -> void:
 	add_child(background)
 
 	var content := VBoxContainer.new()
-	content.position = Vector2(50, 26)
-	content.size = Vector2(1180, 665)
+	content.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	content.offset_left = 28
+	content.offset_top = 24
+	content.offset_right = -28
+	content.offset_bottom = -24
 	content.add_theme_constant_override("separation", 12)
 	add_child(content)
 
@@ -60,7 +63,8 @@ func build_screen() -> void:
 
 func make_card(character: CharacterStats, index: int) -> PanelContainer:
 	var card := PanelContainer.new()
-	card.custom_minimum_size = Vector2(280, 430)
+	card.custom_minimum_size = Vector2(0, 430)
+	card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var stack := VBoxContainer.new()
 	stack.add_theme_constant_override("separation", 8)
 	card.add_child(stack)
@@ -106,13 +110,13 @@ func make_stat_row(parent: VBoxContainer, stat_name: String, modifier: float) ->
 	var row := HBoxContainer.new()
 	parent.add_child(row)
 	var label := make_label(stat_name, 13, Color("#d8e0ee"))
-	label.custom_minimum_size.x = 76
+	label.custom_minimum_size.x = 58
 	row.add_child(label)
 	var bar := ProgressBar.new()
 	bar.max_value = 120.0
 	bar.value = modifier * 100.0
 	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(150, 13)
+	bar.custom_minimum_size = Vector2(72, 13)
 	bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var background_style := StyleBoxFlat.new()
 	background_style.bg_color = Color("#26334a")
