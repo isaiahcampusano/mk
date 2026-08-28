@@ -1,8 +1,12 @@
 [application]
 
 config/name="MK Circuit"
-run/main_scene="res://main.tscn"
+run/main_scene="res://CharacterSelect.tscn"
 config/features=PackedStringArray("4.3")
+
+[autoload]
+
+RaceConfig="*res://RaceConfig.gd"
 
 [display]
 

@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="VehicleStats" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://data/VehicleStats.gd" id="1"]
+
+[sub_resource type="Gradient" id="Gradient_zipbug"]
+colors = PackedColorArray(0.22, 0.92, 0.36, 1, 0.03, 0.38, 0.2, 1)
+
+[sub_resource type="GradientTexture2D" id="Icon_zipbug"]
+gradient = SubResource("Gradient_zipbug")
+width = 128
+height = 96
+
+[resource]
+script = ExtResource("1")
+vehicle_name = "Zipbug"
+icon = SubResource("Icon_zipbug")
+speed_mod = 0.9
+accel_mod = 1.15
+handling_mod = 1.0
+drift_mod = 1.05
+

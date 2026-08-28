@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="CharacterStats" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://data/CharacterStats.gd" id="1"]
+
+[sub_resource type="Gradient" id="Gradient_bramble"]
+colors = PackedColorArray(0.98, 0.82, 0.22, 1, 0.48, 0.28, 0.08, 1)
+
+[sub_resource type="GradientTexture2D" id="Portrait_bramble"]
+gradient = SubResource("Gradient_bramble")
+width = 128
+height = 128
+fill_from = Vector2(0, 0)
+fill_to = Vector2(1, 1)
+
+[resource]
+script = ExtResource("1")
+character_name = "Bramble Knox"
+portrait = SubResource("Portrait_bramble")
+weight = 0.85
+base_speed_mod = 1.15
+base_accel_mod = 0.85
+base_handling_mod = 0.85
+

@@ -23,6 +23,8 @@ the included GitHub Actions workflow.
 
 | Action | Keyboard |
 | --- | --- |
+| Choose driver / kart | Arrow keys + Enter |
+| Return from kart selection | Escape |
 | Accelerate / brake | W/S or Up/Down |
 | Steer | A/D or Left/Right |
 | Drift and charge a mini-turbo | Shift while steering |
@@ -32,6 +34,9 @@ the included GitHub Actions workflow.
 ## Included MVP systems
 
 - A closed track with asphalt, penalizing dirt/grass, and physical walls
+- Four original drivers and four kart bodies backed by editable Godot Resources
+- A persistent driver → kart → countdown pre-race flow
+- Resolved loadout stats that scale speed, acceleration, handling, and drifting
 - Responsive acceleration, reverse, speed-scaled steering, drift, and mini-turbo
 - 16 ordered checkpoints; skipped or backward checkpoints never count
 - Countdown → Racing → Finished state machine and three-lap races
@@ -39,6 +44,7 @@ the included GitHub Actions workflow.
 - Respawning item boxes, banana spin-outs, and mushroom speed boosts
 - Out-of-bounds recovery at the last valid checkpoint
 - Live lap, position, held-item, timer, and replay UI
+- Driver/kart identification in the race HUD and final standings
 
 The entire game is deliberately code-driven in `main.gd`, which makes the MVP
 easy to inspect, tune, and extend without generated editor metadata.

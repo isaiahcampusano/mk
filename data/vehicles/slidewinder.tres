@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="VehicleStats" load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://data/VehicleStats.gd" id="1"]
+
+[sub_resource type="Gradient" id="Gradient_slide"]
+colors = PackedColorArray(0.2, 0.82, 1, 1, 0.12, 0.28, 0.76, 1)
+
+[sub_resource type="GradientTexture2D" id="Icon_slide"]
+gradient = SubResource("Gradient_slide")
+width = 128
+height = 96
+
+[resource]
+script = ExtResource("1")
+vehicle_name = "Slidewinder"
+icon = SubResource("Icon_slide")
+speed_mod = 0.95
+accel_mod = 0.95
+handling_mod = 1.15
+drift_mod = 1.2
+

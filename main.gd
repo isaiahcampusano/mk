@@ -28,6 +28,8 @@ var message_label: Label
 var lap_label: Label
 var position_label: Label
 var item_label: Label
+var character_label: Label
+var character_portrait: TextureRect
 var timer_label: Label
 var help_label: Label
 var result_panel: ColorRect
@@ -63,8 +65,8 @@ func start_race() -> void:
 	var start_heading := (track_points[1] - track_points[0]).angle()
 	var tangent := Vector2.from_angle(start_heading)
 	var normal := tangent.orthogonal()
-	player = create_kart("PLAYER", track_points[0] - tangent * 18.0 - normal * 24.0, start_heading, Color("#ef3f47"), false)
-	create_kart("RIVAL", track_points[0] - tangent * 58.0 + normal * 25.0, start_heading, Color("#3e70ff"), true)
+	player = create_kart("PLAYER", track_points[0] - tangent * 18.0 - normal * 24.0, start_heading, Color("#ef3f47"), false, RaceConfig.player_character, RaceConfig.player_vehicle)
+	create_kart("RIVAL", track_points[0] - tangent * 58.0 + normal * 25.0, start_heading, Color("#3e70ff"), true, RaceConfig.ai_character, RaceConfig.ai_vehicle)
 
 	for index in [3, 6, 9, 12, 14]:
 		var box := ItemBox.new()
@@ -82,13 +84,14 @@ func start_race() -> void:
 	flash_timer = 0.0
 
 
-func create_kart(kart_name: String, spawn: Vector2, heading: float, color: Color, ai: bool) -> Kart:
+func create_kart(kart_name: String, spawn: Vector2, heading: float, color: Color, ai: bool, character: CharacterStats, vehicle: VehicleStats) -> Kart:
 	var kart := Kart.new()
 	kart.kart_name = kart_name
 	kart.position = spawn
 	kart.rotation = heading
 	kart.body_color = color
 	kart.is_ai = ai
+	kart.configure_loadout(character, vehicle)
 	kart.track = track_points
 	kart.track_width = ROAD_HALF_WIDTH
 	kart.next_checkpoint = 1
@@ -133,18 +136,26 @@ func build_ui() -> void:
 
 	var hud_back := ColorRect.new()
 	hud_back.position = Vector2(18, 16)
-	hud_back.size = Vector2(285, 116)
+	hud_back.size = Vector2(380, 150)
 	hud_back.color = Color(0.04, 0.05, 0.08, 0.78)
 	layer.add_child(hud_back)
 
 	lap_label = make_label(Vector2(34, 27), 28, Color.WHITE)
 	position_label = make_label(Vector2(34, 62), 25, Color("#ffd548"))
 	item_label = make_label(Vector2(34, 94), 20, Color("#cceaff"))
+	character_label = make_label(Vector2(34, 122), 17, Color("#75f0c8"))
 	timer_label = make_label(Vector2(1085, 22), 22, Color.WHITE)
 	help_label = make_label(Vector2(20, 682), 16, Color(1, 1, 1, 0.86))
 	help_label.text = "WASD / ARROWS drive   SHIFT drift   SPACE use item   R restart"
-	for label in [lap_label, position_label, item_label, timer_label, help_label]:
+	for label in [lap_label, position_label, item_label, character_label, timer_label, help_label]:
 		layer.add_child(label)
+	character_portrait = TextureRect.new()
+	character_portrait.position = Vector2(294, 28)
+	character_portrait.size = Vector2(66, 66)
+	character_portrait.texture = RaceConfig.player_character.portrait
+	character_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	character_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	layer.add_child(character_portrait)
 
 	message_label = make_label(Vector2.ZERO, 64, Color.WHITE)
 	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -156,12 +167,12 @@ func build_ui() -> void:
 	layer.add_child(message_label)
 
 	result_panel = ColorRect.new()
-	result_panel.position = Vector2(350, 175)
-	result_panel.size = Vector2(580, 370)
+	result_panel.position = Vector2(290, 150)
+	result_panel.size = Vector2(700, 420)
 	result_panel.color = Color(0.025, 0.03, 0.055, 0.94)
 	layer.add_child(result_panel)
 	result_label = make_label(Vector2(20, 25), 30, Color.WHITE)
-	result_label.size = Vector2(540, 320)
+	result_label.size = Vector2(660, 370)
 	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	result_panel.add_child(result_label)
@@ -176,6 +187,9 @@ func make_label(pos: Vector2, font_size: int, color: Color) -> Label:
 
 
 func _physics_process(delta: float) -> void:
+	if race_state == RaceState.FINISHED and Input.is_action_just_pressed("ui_cancel"):
+		get_tree().change_scene_to_file("res://CharacterSelect.tscn")
+		return
 	if Input.is_action_just_pressed("restart"):
 		start_race()
 		return
@@ -337,7 +351,12 @@ func finish_race() -> void:
 	sort_race_positions()
 	result_panel.visible = true
 	message_label.visible = false
-	result_label.text = "RACE COMPLETE\n\nYou finished %s\nTime  %s\n\nPress R or Enter to race again" % [ordinal(player.race_position), format_time(race_time)]
+	var ordered := karts.duplicate()
+	ordered.sort_custom(func(a: Kart, b: Kart): return a.race_position < b.race_position)
+	var standings := ""
+	for kart in ordered:
+		standings += "%s  %s — %s / %s\n" % [ordinal(kart.race_position), kart.kart_name, kart.character_stats.character_name, kart.vehicle_stats.vehicle_name]
+	result_label.text = "RACE COMPLETE\n\n%s\nYour time  %s\n\nR / ENTER rematch    ESC customize" % [standings, format_time(race_time)]
 
 
 func update_hud(delta: float) -> void:
@@ -354,6 +373,7 @@ func update_hud(delta: float) -> void:
 		lap_label.text = "LAP  %d / %d" % [min(player.laps_completed + 1, TOTAL_LAPS), TOTAL_LAPS]
 		position_label.text = "POSITION  " + ordinal(player.race_position)
 		item_label.text = "ITEM  " + (player.held_item if player.held_item != "" else "—")
+		character_label.text = "DRIVER  %s  •  %s" % [player.character_stats.character_name, player.vehicle_stats.vehicle_name]
 	timer_label.text = format_time(race_time)
 
 
@@ -431,6 +451,13 @@ class Kart extends CharacterBody2D:
 	var kart_name := "KART"
 	var body_color := Color.RED
 	var is_ai := false
+	var character_stats: CharacterStats
+	var vehicle_stats: VehicleStats
+	var resolved_top_speed := KartStatsResolver.BASE_TOP_SPEED
+	var resolved_acceleration := KartStatsResolver.BASE_ACCELERATION
+	var resolved_turn_rate := KartStatsResolver.BASE_TURN_RATE
+	var resolved_drift_turn_rate := KartStatsResolver.BASE_DRIFT_TURN_RATE
+	var resolved_drift_min_speed := KartStatsResolver.BASE_DRIFT_MIN_SPEED
 	var track := PackedVector2Array()
 	var track_width := 72.0
 	var controls_locked := true
@@ -449,6 +476,16 @@ class Kart extends CharacterBody2D:
 	var checkpoint_cooldown := 0.0
 	var drift_charge := 0.0
 	var was_drifting := false
+
+	func configure_loadout(character: CharacterStats, vehicle: VehicleStats) -> void:
+		character_stats = character
+		vehicle_stats = vehicle
+		var stats := KartStatsResolver.resolve(character, vehicle)
+		resolved_top_speed = stats.top_speed
+		resolved_acceleration = stats.acceleration
+		resolved_turn_rate = stats.turn_rate
+		resolved_drift_turn_rate = stats.drift_turn_rate
+		resolved_drift_min_speed = stats.drift_min_speed
 
 	func _ready() -> void:
 		collision_layer = 2
@@ -497,16 +534,16 @@ class Kart extends CharacterBody2D:
 		else:
 			throttle = Input.get_axis("brake", "accelerate")
 			steering = Input.get_axis("steer_left", "steer_right")
-			drifting = Input.is_action_pressed("drift") and abs(steering) > 0.2 and abs(current_speed) > 120.0
+			drifting = Input.is_action_pressed("drift") and abs(steering) > 0.2 and abs(current_speed) > resolved_drift_min_speed
 			if Input.is_action_just_pressed("use_item"):
 				wants_to_use_item = true
 
-		var max_speed := 355.0
+		var max_speed: float = resolved_top_speed
 		if off_track:
 			max_speed *= 0.48
 		if boost_timer > 0.0:
-			max_speed = 480.0
-		var acceleration := 245.0
+			max_speed = resolved_top_speed * 1.35
+		var acceleration: float = resolved_acceleration
 		if throttle > 0.0:
 			current_speed = move_toward(current_speed, max_speed * throttle, acceleration * delta)
 		elif throttle < 0.0:
@@ -521,7 +558,7 @@ class Kart extends CharacterBody2D:
 			current_speed = clamp(current_speed, -100.0, max_speed)
 		var speed_factor: float = clampf(abs(current_speed) / 135.0, 0.25, 1.0)
 		var direction_sign: float = signf(current_speed) if abs(current_speed) > 1.0 else 1.0
-		var turn_rate := 2.35 if not drifting else 3.05
+		var turn_rate: float = resolved_turn_rate if not drifting else resolved_drift_turn_rate
 		rotation += steering * turn_rate * speed_factor * direction_sign * delta
 
 		if drifting:
