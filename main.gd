@@ -13,6 +13,7 @@ const CAMERA_LOOK_AHEAD := 74.0
 const CAMERA_POSITION_SMOOTH := 7.0
 const CAMERA_ROTATION_SMOOTH := 9.0
 const CAMERA_COLLISION_MARGIN := 8.0
+const POSITION_LABEL_HOME := Vector2(18.0, 46.0)
 
 enum RaceState { COUNTDOWN, RACING, FINISHED }
 
@@ -33,17 +34,31 @@ var race_state := RaceState.COUNTDOWN
 var countdown := 3.99
 var race_time := 0.0
 var message_label: Label
+var hud_panel: Panel
 var lap_label: Label
 var position_label: Label
-var item_label: Label
 var character_label: Label
 var character_portrait: TextureRect
+var item_frame: Panel
+var item_icon: Label
+var item_name_label: Label
+var item_frame_style: StyleBoxFlat
+var speed_bar: ProgressBar
+var speed_label: Label
+var speed_fill_style: StyleBoxFlat
+var rival_status_label: Label
 var timer_label: Label
 var help_label: Label
-var result_panel: ColorRect
+var result_panel: Panel
 var result_label: Label
 var flash_text := ""
 var flash_timer := 0.0
+var last_held_item := ""
+var last_laps_completed := 0
+var last_race_position := 1
+var item_pulse_tween: Tween
+var lap_pulse_tween: Tween
+var position_change_tween: Tween
 var chase_camera: Camera3D
 var debug_camera: Camera3D
 var debug_camera_enabled := false
@@ -91,6 +106,11 @@ func start_race() -> void:
 	message_label.visible = true
 	flash_text = ""
 	flash_timer = 0.0
+	last_held_item = ""
+	last_laps_completed = 0
+	last_race_position = player.race_position
+	reset_hud_feedback()
+	update_item_slot("")
 	reset_chase_camera()
 
 
@@ -371,28 +391,121 @@ func build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 
-	var hud_back := ColorRect.new()
-	hud_back.position = Vector2(18, 16)
-	hud_back.size = Vector2(380, 150)
-	hud_back.color = Color(0.04, 0.05, 0.08, 0.78)
-	layer.add_child(hud_back)
+	var hud_root := Control.new()
+	hud_root.name = "HUDRoot"
+	hud_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(hud_root)
 
-	lap_label = make_label(Vector2(34, 27), 28, Color.WHITE)
-	position_label = make_label(Vector2(34, 62), 25, Color("#ffd548"))
-	item_label = make_label(Vector2(34, 94), 20, Color("#cceaff"))
-	character_label = make_label(Vector2(34, 122), 17, Color("#75f0c8"))
-	timer_label = make_label(Vector2(1085, 22), 22, Color.WHITE)
-	help_label = make_label(Vector2(20, 682), 16, Color(1, 1, 1, 0.86))
-	help_label.text = "WASD / ARROWS drive   SHIFT drift   SPACE item   F3 camera   R restart"
-	for label in [lap_label, position_label, item_label, character_label, timer_label, help_label]:
-		layer.add_child(label)
+	hud_panel = Panel.new()
+	hud_panel.name = "RaceHUD"
+	hud_panel.position = Vector2(18, 16)
+	hud_panel.size = Vector2(430, 214)
+	hud_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.025, 0.055, 0.09, 0.9), Color(0.45, 0.72, 0.92, 0.7), 16, 2))
+	hud_root.add_child(hud_panel)
+
+	var player_stripe := ColorRect.new()
+	player_stripe.position = Vector2(0, 18)
+	player_stripe.size = Vector2(6, 178)
+	player_stripe.color = Color("#ef3f47")
+	player_stripe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hud_panel.add_child(player_stripe)
+
+	lap_label = make_label(Vector2(18, 10), 26, Color.WHITE)
+	lap_label.size = Vector2(300, 36)
+	lap_label.text = "🏁  LAP  1 / %d" % TOTAL_LAPS
+	hud_panel.add_child(lap_label)
+
+	position_label = make_label(POSITION_LABEL_HOME, 26, Color("#ffd548"))
+	position_label.size = Vector2(300, 36)
+	position_label.text = "🏆  1st"
+	hud_panel.add_child(position_label)
+
+	character_label = make_label(Vector2(18, 84), 16, Color("#75f0c8"))
+	character_label.size = Vector2(305, 27)
+	hud_panel.add_child(character_label)
+
+	var portrait_frame := Panel.new()
+	portrait_frame.position = Vector2(338, 17)
+	portrait_frame.size = Vector2(74, 78)
+	portrait_frame.add_theme_stylebox_override("panel", make_panel_style(Color(0.055, 0.08, 0.12, 0.96), Color("#ef3f47"), 12, 2))
+	hud_panel.add_child(portrait_frame)
 	character_portrait = TextureRect.new()
-	character_portrait.position = Vector2(294, 28)
-	character_portrait.size = Vector2(66, 66)
+	character_portrait.position = Vector2(7, 7)
+	character_portrait.size = Vector2(60, 64)
 	character_portrait.texture = RaceConfig.player_character.portrait
 	character_portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	character_portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	layer.add_child(character_portrait)
+	portrait_frame.add_child(character_portrait)
+
+	item_frame = Panel.new()
+	item_frame.name = "ItemSlot"
+	item_frame.position = Vector2(18, 120)
+	item_frame.size = Vector2(194, 70)
+	item_frame.pivot_offset = item_frame.size * 0.5
+	item_frame_style = make_panel_style(Color(0.12, 0.15, 0.19, 0.96), Color(0.5, 0.58, 0.67, 0.78), 12, 2)
+	item_frame.add_theme_stylebox_override("panel", item_frame_style)
+	hud_panel.add_child(item_frame)
+
+	item_icon = make_label(Vector2(7, 7), 34, Color.WHITE)
+	item_icon.size = Vector2(52, 56)
+	item_icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	item_icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	item_frame.add_child(item_icon)
+	item_name_label = make_label(Vector2(66, 9), 16, Color("#dcecff"))
+	item_name_label.size = Vector2(118, 52)
+	item_name_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	item_frame.add_child(item_name_label)
+
+	speed_label = make_label(Vector2(230, 118), 15, Color("#b9d9f4"))
+	speed_label.size = Vector2(182, 24)
+	hud_panel.add_child(speed_label)
+	speed_bar = ProgressBar.new()
+	speed_bar.name = "SpeedBar"
+	speed_bar.position = Vector2(230, 144)
+	speed_bar.size = Vector2(182, 18)
+	speed_bar.min_value = 0.0
+	speed_bar.max_value = 100.0
+	speed_bar.show_percentage = false
+	speed_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	speed_bar.add_theme_stylebox_override("background", make_panel_style(Color(0.025, 0.04, 0.06, 0.9), Color(0.22, 0.34, 0.45, 0.8), 8, 1))
+	speed_fill_style = make_panel_style(Color("#3f8cff"), Color.TRANSPARENT, 8, 0)
+	speed_bar.add_theme_stylebox_override("fill", speed_fill_style)
+	hud_panel.add_child(speed_bar)
+
+	rival_status_label = make_label(Vector2(230, 170), 14, Color("#79a2ff"))
+	rival_status_label.size = Vector2(190, 25)
+	hud_panel.add_child(rival_status_label)
+
+	var timer_panel := Panel.new()
+	timer_panel.name = "TimerPanel"
+	timer_panel.anchor_left = 1.0
+	timer_panel.anchor_right = 1.0
+	timer_panel.offset_left = -218.0
+	timer_panel.offset_right = -18.0
+	timer_panel.offset_top = 16.0
+	timer_panel.offset_bottom = 78.0
+	timer_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.025, 0.055, 0.09, 0.9), Color(0.45, 0.72, 0.92, 0.7), 14, 2))
+	hud_root.add_child(timer_panel)
+	timer_label = make_label(Vector2(12, 8), 22, Color.WHITE)
+	timer_label.size = Vector2(176, 46)
+	timer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	timer_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	timer_panel.add_child(timer_label)
+
+	help_label = make_label(Vector2.ZERO, 15, Color(1, 1, 1, 0.9))
+	help_label.anchor_top = 1.0
+	help_label.anchor_right = 1.0
+	help_label.anchor_bottom = 1.0
+	help_label.offset_left = 20.0
+	help_label.offset_right = -20.0
+	help_label.offset_top = -38.0
+	help_label.offset_bottom = -10.0
+	help_label.text = "WASD / ARROWS drive   SHIFT drift   SPACE item   F3 camera   R restart"
+	help_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	help_label.add_theme_constant_override("shadow_offset_x", 2)
+	help_label.add_theme_constant_override("shadow_offset_y", 2)
+	hud_root.add_child(help_label)
 
 	message_label = make_label(Vector2.ZERO, 64, Color.WHITE)
 	message_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -401,18 +514,26 @@ func build_ui() -> void:
 	message_label.add_theme_color_override("font_shadow_color", Color.BLACK)
 	message_label.add_theme_constant_override("shadow_offset_x", 4)
 	message_label.add_theme_constant_override("shadow_offset_y", 4)
-	layer.add_child(message_label)
+	hud_root.add_child(message_label)
 
-	result_panel = ColorRect.new()
-	result_panel.position = Vector2(290, 150)
-	result_panel.size = Vector2(700, 420)
-	result_panel.color = Color(0.025, 0.03, 0.055, 0.94)
-	layer.add_child(result_panel)
+	result_panel = Panel.new()
+	result_panel.name = "ResultPanel"
+	result_panel.anchor_left = 0.5
+	result_panel.anchor_top = 0.5
+	result_panel.anchor_right = 0.5
+	result_panel.anchor_bottom = 0.5
+	result_panel.offset_left = -350.0
+	result_panel.offset_top = -210.0
+	result_panel.offset_right = 350.0
+	result_panel.offset_bottom = 210.0
+	result_panel.add_theme_stylebox_override("panel", make_panel_style(Color(0.025, 0.03, 0.055, 0.96), Color(0.45, 0.72, 0.92, 0.8), 22, 2))
+	hud_root.add_child(result_panel)
 	result_label = make_label(Vector2(20, 25), 30, Color.WHITE)
 	result_label.size = Vector2(660, 370)
 	result_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	result_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	result_panel.add_child(result_label)
+	update_item_slot("")
 
 
 func make_label(pos: Vector2, font_size: int, color: Color) -> Label:
@@ -420,7 +541,20 @@ func make_label(pos: Vector2, font_size: int, color: Color) -> Label:
 	label.position = pos
 	label.add_theme_font_size_override("font_size", font_size)
 	label.add_theme_color_override("font_color", color)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return label
+
+
+func make_panel_style(background: Color, border: Color, radius: int, border_width: int) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = background
+	style.border_color = border
+	style.set_border_width_all(border_width)
+	style.set_corner_radius_all(radius)
+	style.shadow_color = Color(0, 0, 0, 0.32)
+	style.shadow_size = 5
+	style.shadow_offset = Vector2(0, 3)
+	return style
 
 
 func _process(delta: float) -> void:
@@ -468,6 +602,7 @@ func process_race(delta: float) -> void:
 				box.collect()
 				if kart == player:
 					flash("ITEM: " + kart.held_item, 0.8)
+					pulse_item_frame()
 				break
 
 	for kart in karts:
@@ -622,11 +757,129 @@ func update_hud(delta: float) -> void:
 		message_label.visible = false
 
 	if is_instance_valid(player):
-		lap_label.text = "LAP  %d / %d" % [min(player.laps_completed + 1, TOTAL_LAPS), TOTAL_LAPS]
-		position_label.text = "POSITION  " + ordinal(player.race_position)
-		item_label.text = "ITEM  " + (player.held_item if player.held_item != "" else "—")
+		var current_lap := mini(player.laps_completed + 1, TOTAL_LAPS)
+		lap_label.text = "🏁  LAP  %d / %d" % [current_lap, TOTAL_LAPS]
+		if player.laps_completed > last_laps_completed:
+			animate_lap_change()
+		last_laps_completed = player.laps_completed
+
+		var position_icon := "🏆" if player.race_position == 1 else "🥈"
+		position_label.text = "%s  %s" % [position_icon, ordinal(player.race_position)]
+		position_label.add_theme_color_override("font_color", Color("#ffd548") if player.race_position == 1 else Color("#d9e5f1"))
+		if player.race_position != last_race_position:
+			animate_position_change(last_race_position, player.race_position)
+		last_race_position = player.race_position
+
+		if player.held_item != last_held_item:
+			update_item_slot(player.held_item)
+			last_held_item = player.held_item
 		character_label.text = "DRIVER  %s  •  %s" % [player.character_stats.character_name, player.vehicle_stats.vehicle_name]
-	timer_label.text = format_time(race_time)
+
+		var speed_percent := clampf(absf(player.current_speed) / maxf(player.resolved_top_speed, 1.0), 0.0, 1.0)
+		speed_bar.value = speed_percent * 100.0
+		speed_label.text = "SPEED  %3d%%" % roundi(speed_percent * 100.0)
+		speed_fill_style.bg_color = speed_color(speed_percent)
+
+		var rival: Kart
+		for kart in karts:
+			if kart != player:
+				rival = kart
+				break
+		if is_instance_valid(rival):
+			var rival_lap := mini(rival.laps_completed + 1, TOTAL_LAPS)
+			rival_status_label.text = "● RIVAL  %s  •  LAP %d/%d" % [ordinal(rival.race_position), rival_lap, TOTAL_LAPS]
+	timer_label.text = "⏱  " + format_time(race_time)
+
+
+func update_item_slot(item: String) -> void:
+	if not is_instance_valid(item_frame):
+		return
+	match item:
+		"MUSHROOM":
+			item_icon.text = "🍄"
+			item_name_label.text = "MUSHROOM\nREADY"
+			item_icon.add_theme_color_override("font_color", Color("#b8ffca"))
+			item_name_label.add_theme_color_override("font_color", Color("#b8ffca"))
+			item_frame_style.bg_color = Color(0.035, 0.22, 0.105, 0.96)
+			item_frame_style.border_color = Color("#4ee883")
+		"BANANA":
+			item_icon.text = "🍌"
+			item_name_label.text = "BANANA\nREADY"
+			item_icon.add_theme_color_override("font_color", Color("#fff2a1"))
+			item_name_label.add_theme_color_override("font_color", Color("#fff2a1"))
+			item_frame_style.bg_color = Color(0.25, 0.195, 0.025, 0.96)
+			item_frame_style.border_color = Color("#f7cf3c")
+		_:
+			item_icon.text = "—"
+			item_name_label.text = "EMPTY\nITEM SLOT"
+			item_icon.add_theme_color_override("font_color", Color("#8fa3b8"))
+			item_name_label.add_theme_color_override("font_color", Color("#aebdca"))
+			item_frame_style.bg_color = Color(0.08, 0.105, 0.135, 0.96)
+			item_frame_style.border_color = Color(0.46, 0.56, 0.66, 0.8)
+
+
+func speed_color(percent: float) -> Color:
+	if percent < 0.4:
+		return Color("#3f8cff").lerp(Color("#4ee883"), percent / 0.4)
+	if percent < 0.75:
+		return Color("#4ee883").lerp(Color("#ffad3d"), (percent - 0.4) / 0.35)
+	return Color("#ffad3d").lerp(Color("#ef3f47"), (percent - 0.75) / 0.25)
+
+
+func pulse_item_frame() -> void:
+	if not is_instance_valid(item_frame):
+		return
+	if item_pulse_tween != null and item_pulse_tween.is_valid():
+		item_pulse_tween.kill()
+	item_frame.scale = Vector2.ONE
+	item_frame.modulate = Color.WHITE
+	item_pulse_tween = create_tween()
+	item_pulse_tween.tween_property(item_frame, "scale", Vector2(1.13, 1.13), 0.1).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	item_pulse_tween.parallel().tween_property(item_frame, "modulate", Color("#dcfff0"), 0.1)
+	item_pulse_tween.tween_property(item_frame, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	item_pulse_tween.parallel().tween_property(item_frame, "modulate", Color.WHITE, 0.22)
+
+
+func animate_lap_change() -> void:
+	if lap_pulse_tween != null and lap_pulse_tween.is_valid():
+		lap_pulse_tween.kill()
+	lap_label.pivot_offset = lap_label.size * 0.5
+	lap_label.scale = Vector2(1.16, 1.16)
+	lap_label.modulate = Color("#ffe76c")
+	lap_pulse_tween = create_tween()
+	lap_pulse_tween.set_parallel(true)
+	lap_pulse_tween.tween_property(lap_label, "scale", Vector2.ONE, 0.34).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	lap_pulse_tween.tween_property(lap_label, "modulate", Color.WHITE, 0.34)
+
+
+func animate_position_change(previous_position: int, current_position: int) -> void:
+	if position_change_tween != null and position_change_tween.is_valid():
+		position_change_tween.kill()
+	var entry_offset := -14.0 if current_position < previous_position else 14.0
+	position_label.position = POSITION_LABEL_HOME + Vector2(0, entry_offset)
+	position_label.modulate = Color(1, 1, 1, 0.25)
+	position_change_tween = create_tween()
+	position_change_tween.set_parallel(true)
+	position_change_tween.tween_property(position_label, "position", POSITION_LABEL_HOME, 0.24).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	position_change_tween.tween_property(position_label, "modulate", Color.WHITE, 0.24)
+
+
+func reset_hud_feedback() -> void:
+	for tween in [item_pulse_tween, lap_pulse_tween, position_change_tween]:
+		if tween != null and tween.is_valid():
+			tween.kill()
+	item_pulse_tween = null
+	lap_pulse_tween = null
+	position_change_tween = null
+	if is_instance_valid(item_frame):
+		item_frame.scale = Vector2.ONE
+		item_frame.modulate = Color.WHITE
+	if is_instance_valid(lap_label):
+		lap_label.scale = Vector2.ONE
+		lap_label.modulate = Color.WHITE
+	if is_instance_valid(position_label):
+		position_label.position = POSITION_LABEL_HOME
+		position_label.modulate = Color.WHITE
 
 
 func flash(text: String, duration: float) -> void:
