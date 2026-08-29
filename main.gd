@@ -820,7 +820,7 @@ class Kart extends CharacterBody3D:
 			var direction := (target - position).normalized()
 			var desired := atan2(direction.x, direction.z)
 			var difference := wrapf(desired - rotation.y, -PI, PI)
-			steering = clamp(difference * 2.2, -1.0, 1.0)
+			steering = clamp(-difference * 2.2, -1.0, 1.0)
 			throttle = 0.72 if abs(difference) > 0.65 else 1.0
 			if held_item != "" and (held_item == "MUSHROOM" or randf() < 0.006):
 				wants_to_use_item = true
@@ -852,7 +852,7 @@ class Kart extends CharacterBody3D:
 		var speed_factor: float = clampf(abs(current_speed) / 135.0, 0.25, 1.0)
 		var direction_sign: float = signf(current_speed) if abs(current_speed) > 1.0 else 1.0
 		var turn_rate: float = resolved_turn_rate if not drifting else resolved_drift_turn_rate
-		rotation.y += steering * turn_rate * speed_factor * direction_sign * delta
+		rotation.y -= steering * turn_rate * speed_factor * direction_sign * delta
 
 		if drifting:
 			drift_charge = min(drift_charge + delta, 1.4)
