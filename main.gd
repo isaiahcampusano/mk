@@ -520,13 +520,12 @@ func check_checkpoint(kart: Kart) -> void:
 	# next legitimate checkpoint at boost speed on shorter track segments.
 	kart.checkpoint_cooldown = 0.18
 	if index == 0:
-		kart.laps_completed += 1
+		kart.laps_completed = mini(kart.laps_completed + 1, TOTAL_LAPS)
 		kart.next_checkpoint = 1
-		if kart == player:
-			if kart.laps_completed >= TOTAL_LAPS:
-				finish_race()
-			else:
-				flash("LAP %d / %d" % [kart.laps_completed + 1, TOTAL_LAPS], 1.2)
+		if kart == player and kart.laps_completed >= TOTAL_LAPS:
+			finish_race()
+		elif kart == player:
+			flash("LAP %d / %d" % [kart.laps_completed + 1, TOTAL_LAPS], 1.2)
 	else:
 		kart.next_checkpoint = (index + 1) % track_points.size()
 
