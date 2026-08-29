@@ -1,7 +1,6 @@
 # MK Circuit
 
-<img width="827" height="469" alt="image" src="https://github.com/user-attachments/assets/f3c303cc-f68b-4ff0-8491-5beecf610c0f" />
-
+<img width="775" height="436" alt="image" src="https://github.com/user-attachments/assets/d49259cb-49d2-43b4-b0c0-8864de817fae" />
 
 
 A 3D chase-cam racing game built in Godot 4. The track is inspired by Mario
