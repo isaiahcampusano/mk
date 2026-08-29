@@ -4,8 +4,8 @@
 
 
 
-A complete, self-contained Godot 4 MVP of a two-kart top-down racer. The track
-is inspired by Mario Circuit 3 without copying its art or exact geometry.
+3D chase-cam racing game. track
+is inspired by Mario Circuit 3.
 
 **[Play MK Circuit in your browser](https://isaiahcampusano.github.io/mk/)**
 
