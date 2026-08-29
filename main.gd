@@ -1,20 +1,28 @@
-extends Node2D
+extends Node3D
 
 const TOTAL_LAPS := 3
 const ROAD_HALF_WIDTH := 72.0
 const WALL_OFFSET := 142.0
 const CHECKPOINT_RADIUS := 92.0
 const WORLD_RECT := Rect2(40, 35, 1320, 750)
+const WALL_HEIGHT := 20.0
+const WALL_THICKNESS := 7.0
+const CAMERA_DISTANCE := 164.0
+const CAMERA_HEIGHT := 88.0
+const CAMERA_LOOK_AHEAD := 74.0
+const CAMERA_POSITION_SMOOTH := 7.0
+const CAMERA_ROTATION_SMOOTH := 9.0
+const CAMERA_COLLISION_MARGIN := 8.0
 
 enum RaceState { COUNTDOWN, RACING, FINISHED }
 
-var track_points := PackedVector2Array([
-	Vector2(210, 345), Vector2(250, 215), Vector2(370, 130),
-	Vector2(565, 105), Vector2(735, 130), Vector2(850, 220),
-	Vector2(1035, 175), Vector2(1210, 240), Vector2(1260, 365),
-	Vector2(1185, 475), Vector2(1120, 650), Vector2(930, 700),
-	Vector2(770, 625), Vector2(610, 705), Vector2(405, 675),
-	Vector2(240, 565)
+var track_points := PackedVector3Array([
+	Vector3(210, 0, 345), Vector3(250, 0, 215), Vector3(370, 0, 130),
+	Vector3(565, 0, 105), Vector3(735, 0, 130), Vector3(850, 0, 220),
+	Vector3(1035, 0, 175), Vector3(1210, 0, 240), Vector3(1260, 0, 365),
+	Vector3(1185, 0, 475), Vector3(1120, 0, 650), Vector3(930, 0, 700),
+	Vector3(770, 0, 625), Vector3(610, 0, 705), Vector3(405, 0, 675),
+	Vector3(240, 0, 565)
 ])
 
 var karts: Array[Kart] = []
@@ -36,18 +44,19 @@ var result_panel: ColorRect
 var result_label: Label
 var flash_text := ""
 var flash_timer := 0.0
+var chase_camera: Camera3D
+var debug_camera: Camera3D
+var debug_camera_enabled := false
+var camera_look_point := Vector3.ZERO
 
 
 func _ready() -> void:
-	RenderingServer.set_default_clear_color(Color("#58a33b"))
-	var camera := Camera2D.new()
-	camera.position = Vector2(700, 410)
-	camera.zoom = Vector2(0.84, 0.84)
-	add_child(camera)
+	RenderingServer.set_default_clear_color(Color("#78c6df"))
+	build_world_geometry()
 	build_walls()
+	build_cameras()
 	build_ui()
 	start_race()
-	queue_redraw()
 
 
 func start_race() -> void:
@@ -62,11 +71,11 @@ func start_race() -> void:
 	item_boxes.clear()
 	bananas.clear()
 
-	var start_heading := (track_points[1] - track_points[0]).angle()
-	var tangent := Vector2.from_angle(start_heading)
-	var normal := tangent.orthogonal()
-	player = create_kart("PLAYER", track_points[0] - tangent * 18.0 - normal * 24.0, start_heading, Color("#ef3f47"), false, RaceConfig.player_character, RaceConfig.player_vehicle)
-	create_kart("RIVAL", track_points[0] - tangent * 58.0 + normal * 25.0, start_heading, Color("#3e70ff"), true, RaceConfig.ai_character, RaceConfig.ai_vehicle)
+	var start_tangent := (track_points[1] - track_points[0]).normalized()
+	var start_heading := heading_from_direction(start_tangent)
+	var normal := planar_normal(start_tangent)
+	player = create_kart("PLAYER", track_points[0] - start_tangent * 18.0 - normal * 24.0, start_heading, Color("#ef3f47"), false, RaceConfig.player_character, RaceConfig.player_vehicle)
+	create_kart("RIVAL", track_points[0] - start_tangent * 58.0 + normal * 25.0, start_heading, Color("#3e70ff"), true, RaceConfig.ai_character, RaceConfig.ai_vehicle)
 
 	for index in [3, 6, 9, 12, 14]:
 		var box := ItemBox.new()
@@ -82,13 +91,14 @@ func start_race() -> void:
 	message_label.visible = true
 	flash_text = ""
 	flash_timer = 0.0
+	reset_chase_camera()
 
 
-func create_kart(kart_name: String, spawn: Vector2, heading: float, color: Color, ai: bool, character: CharacterStats, vehicle: VehicleStats) -> Kart:
+func create_kart(kart_name: String, spawn: Vector3, heading: float, color: Color, ai: bool, character: CharacterStats, vehicle: VehicleStats) -> Kart:
 	var kart := Kart.new()
 	kart.kart_name = kart_name
 	kart.position = spawn
-	kart.rotation = heading
+	kart.rotation.y = heading
 	kart.body_color = color
 	kart.is_ai = ai
 	kart.configure_loadout(character, vehicle)
@@ -102,32 +112,259 @@ func create_kart(kart_name: String, spawn: Vector2, heading: float, color: Color
 	return kart
 
 
+func build_world_geometry() -> void:
+	build_ground()
+	build_track_ribbons()
+	build_lane_markings()
+	build_finish_line()
+	build_checkpoint_markers()
+
+
+func build_ground() -> void:
+	var ground_material := make_unshaded_material(Color("#4b9636"))
+	var ground_mesh := BoxMesh.new()
+	ground_mesh.size = Vector3(5000.0, 1.0, 4000.0)
+	ground_mesh.material = ground_material
+	var ground_visual := MeshInstance3D.new()
+	ground_visual.name = "GrassGround"
+	ground_visual.mesh = ground_mesh
+	ground_visual.position = Vector3(700.0, -0.55, 410.0)
+	add_child(ground_visual)
+
+	var floor_body := StaticBody3D.new()
+	floor_body.name = "GroundCollider"
+	floor_body.collision_layer = 1
+	floor_body.collision_mask = 0
+	var floor_collision := CollisionShape3D.new()
+	var floor_shape := BoxShape3D.new()
+	floor_shape.size = Vector3(1500.0, 1.0, 900.0)
+	floor_collision.shape = floor_shape
+	floor_collision.position = Vector3(700.0, -0.55, 410.0)
+	floor_body.add_child(floor_collision)
+	add_child(floor_body)
+
+
+func build_track_ribbons() -> void:
+	var shoulder_surface := SurfaceTool.new()
+	shoulder_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	shoulder_surface.set_material(make_unshaded_material(Color("#b48a55")))
+	var road_surface := SurfaceTool.new()
+	road_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	road_surface.set_material(make_unshaded_material(Color("#2d3138")))
+
+	var inner_wall := get_offset_loop(-WALL_OFFSET)
+	var inner_road := get_offset_loop(-ROAD_HALF_WIDTH)
+	var outer_road := get_offset_loop(ROAD_HALF_WIDTH)
+	var outer_wall := get_offset_loop(WALL_OFFSET)
+	for i in track_points.size():
+		var next := (i + 1) % track_points.size()
+		append_quad(shoulder_surface, inner_wall[i], inner_wall[next], inner_road[next], inner_road[i], 0.01)
+		append_quad(road_surface, inner_road[i], inner_road[next], outer_road[next], outer_road[i], 0.03)
+		append_quad(shoulder_surface, outer_road[i], outer_road[next], outer_wall[next], outer_wall[i], 0.01)
+
+	var shoulder := MeshInstance3D.new()
+	shoulder.name = "DirtShoulders"
+	shoulder.mesh = shoulder_surface.commit()
+	add_child(shoulder)
+	var road := MeshInstance3D.new()
+	road.name = "AsphaltRoad"
+	road.mesh = road_surface.commit()
+	add_child(road)
+
+
+func build_lane_markings() -> void:
+	var edge_material := make_unshaded_material(Color("#e8dfb9"))
+	var dash_material := make_unshaded_material(Color(1.0, 1.0, 1.0, 0.42))
+	for i in track_points.size():
+		var a := track_points[i]
+		var b := track_points[(i + 1) % track_points.size()]
+		var direction := (b - a).normalized()
+		var length := a.distance_to(b)
+		var heading := heading_from_direction(direction)
+		add_box_visual("LaneEdge", Vector3(4.0, 0.12, length), edge_material, (a + b) * 0.5 + Vector3.UP * 0.10, heading)
+		var cursor := 18.0
+		while cursor < length:
+			var dash_length: float = minf(16.0, length - cursor)
+			var center: Vector3 = a + direction * (cursor + dash_length * 0.5) + Vector3.UP * 0.18
+			add_box_visual("LaneDash", Vector3(2.0, 0.10, dash_length), dash_material, center, heading)
+			cursor += 34.0
+
+
+func build_finish_line() -> void:
+	var white := make_unshaded_material(Color.WHITE)
+	var black := make_unshaded_material(Color("#15171c"))
+	var finish_tangent := (track_points[1] - track_points[-1]).normalized()
+	var finish_normal := planar_normal(finish_tangent)
+	var heading := heading_from_direction(finish_tangent)
+	for row in 6:
+		for column in 2:
+			var center := track_points[0] + finish_normal * (row - 2.5) * 20.0 + finish_tangent * (column - 0.5) * 15.0 + Vector3.UP * 0.24
+			var material := white if (row + column) % 2 == 0 else black
+			add_box_visual("FinishTile", Vector3(16.0, 0.14, 20.0), material, center, heading)
+
+
+func build_checkpoint_markers() -> void:
+	var marker_material := make_unshaded_material(Color(0.2, 0.9, 1.0, 0.52))
+	for i in track_points.size():
+		if i == 0:
+			continue
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 7.0
+		mesh.bottom_radius = 7.0
+		mesh.height = 0.35
+		mesh.radial_segments = 12
+		mesh.material = marker_material
+		var marker := MeshInstance3D.new()
+		marker.name = "Checkpoint%02d" % i
+		marker.mesh = mesh
+		marker.position = track_points[i] + Vector3.UP * 0.25
+		add_child(marker)
+
+
 func build_walls() -> void:
-	var wall_body := StaticBody2D.new()
+	var wall_body := StaticBody3D.new()
 	wall_body.collision_layer = 1
 	wall_body.collision_mask = 0
 	wall_body.name = "TrackWalls"
 	add_child(wall_body)
 	var inner := get_offset_loop(-WALL_OFFSET)
 	var outer := get_offset_loop(WALL_OFFSET)
-	for loop in [inner, outer]:
+	var wall_blue := make_unshaded_material(Color("#2f6573"))
+	var wall_cream := make_unshaded_material(Color("#e9d79b"))
+	for loop_index in 2:
+		var loop := inner if loop_index == 0 else outer
 		for i in loop.size():
-			var shape := CollisionShape2D.new()
-			var segment := SegmentShape2D.new()
-			segment.a = loop[i]
-			segment.b = loop[(i + 1) % loop.size()]
-			shape.shape = segment
-			wall_body.add_child(shape)
+			var a := loop[i]
+			var b := loop[(i + 1) % loop.size()]
+			var direction := (b - a).normalized()
+			var length := a.distance_to(b)
+			var midpoint := (a + b) * 0.5 + Vector3.UP * (WALL_HEIGHT * 0.5)
+			var heading := heading_from_direction(direction)
+
+			var shape_node := CollisionShape3D.new()
+			var shape := BoxShape3D.new()
+			shape.size = Vector3(WALL_THICKNESS, WALL_HEIGHT, length)
+			shape_node.shape = shape
+			shape_node.position = midpoint
+			shape_node.rotation.y = heading
+			wall_body.add_child(shape_node)
+
+			var wall_mesh := BoxMesh.new()
+			wall_mesh.size = Vector3(WALL_THICKNESS, 12.0, length)
+			wall_mesh.material = wall_blue if (i + loop_index) % 2 == 0 else wall_cream
+			var wall_visual := MeshInstance3D.new()
+			wall_visual.name = "WallVisual"
+			wall_visual.mesh = wall_mesh
+			wall_visual.position = Vector3(midpoint.x, 6.0, midpoint.z)
+			wall_visual.rotation.y = heading
+			wall_body.add_child(wall_visual)
 
 
-func get_offset_loop(distance: float) -> PackedVector2Array:
-	var result := PackedVector2Array()
+func get_offset_loop(distance: float) -> PackedVector3Array:
+	var result := PackedVector3Array()
 	for i in track_points.size():
 		var previous := track_points[(i - 1 + track_points.size()) % track_points.size()]
 		var following := track_points[(i + 1) % track_points.size()]
 		var tangent := (following - previous).normalized()
-		result.append(track_points[i] + tangent.orthogonal() * distance)
+		result.append(track_points[i] + planar_normal(tangent) * distance)
 	return result
+
+
+func planar_normal(tangent: Vector3) -> Vector3:
+	return Vector3(-tangent.z, 0.0, tangent.x)
+
+
+func heading_from_direction(direction: Vector3) -> float:
+	return atan2(direction.x, direction.z)
+
+
+func append_quad(surface: SurfaceTool, a: Vector3, b: Vector3, c: Vector3, d: Vector3, y_offset: float) -> void:
+	for vertex in [a, b, c, a, c, d]:
+		surface.set_normal(Vector3.UP)
+		surface.add_vertex(vertex + Vector3.UP * y_offset)
+
+
+func make_unshaded_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	if color.a < 1.0:
+		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	return material
+
+
+func add_box_visual(node_name: String, size: Vector3, material: Material, position_3d: Vector3, heading: float) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	mesh.material = material
+	var instance := MeshInstance3D.new()
+	instance.name = node_name
+	instance.mesh = mesh
+	instance.position = position_3d
+	instance.rotation.y = heading
+	add_child(instance)
+	return instance
+
+
+func build_cameras() -> void:
+	chase_camera = Camera3D.new()
+	chase_camera.name = "ChaseCamera"
+	chase_camera.fov = 58.0
+	chase_camera.near = 0.5
+	chase_camera.far = 3000.0
+	chase_camera.current = true
+	add_child(chase_camera)
+
+	debug_camera = Camera3D.new()
+	debug_camera.name = "DebugTopDownCamera"
+	debug_camera.position = Vector3(700.0, 1100.0, 410.0)
+	debug_camera.rotation.x = -PI * 0.5
+	debug_camera.fov = 68.0
+	debug_camera.near = 1.0
+	debug_camera.far = 3000.0
+	debug_camera.current = false
+	add_child(debug_camera)
+
+
+func reset_chase_camera() -> void:
+	if not is_instance_valid(player) or not is_instance_valid(chase_camera):
+		return
+	var forward := player.forward_vector()
+	camera_look_point = player.global_position + Vector3.UP * 13.0 + forward * CAMERA_LOOK_AHEAD
+	chase_camera.global_position = player.global_position - forward * CAMERA_DISTANCE + Vector3.UP * CAMERA_HEIGHT
+	chase_camera.look_at(camera_look_point, Vector3.UP)
+
+
+func update_chase_camera(delta: float) -> void:
+	if not is_instance_valid(player) or not is_instance_valid(chase_camera):
+		return
+	var forward := player.forward_vector()
+	var anchor := player.global_position + Vector3.UP * 15.0
+	var desired_position := player.global_position - forward * CAMERA_DISTANCE + Vector3.UP * CAMERA_HEIGHT
+	var ray_query := PhysicsRayQueryParameters3D.create(anchor, desired_position, 1, [player.get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(ray_query)
+	if not hit.is_empty():
+		desired_position = hit.position + (anchor - hit.position).normalized() * CAMERA_COLLISION_MARGIN
+
+	var position_weight := 1.0 - exp(-CAMERA_POSITION_SMOOTH * delta)
+	var rotation_weight := 1.0 - exp(-CAMERA_ROTATION_SMOOTH * delta)
+	chase_camera.global_position = chase_camera.global_position.lerp(desired_position, position_weight)
+	var desired_look := player.global_position + Vector3.UP * 13.0 + forward * CAMERA_LOOK_AHEAD
+	camera_look_point = camera_look_point.lerp(desired_look, rotation_weight)
+	var look_direction := (camera_look_point - chase_camera.global_position).normalized()
+	if look_direction.length_squared() > 0.001:
+		var desired_basis := Basis.looking_at(look_direction, Vector3.UP)
+		var smooth_rotation := Quaternion(chase_camera.global_basis).slerp(Quaternion(desired_basis), rotation_weight)
+		chase_camera.global_basis = Basis(smooth_rotation).orthonormalized()
+
+
+func toggle_debug_camera() -> void:
+	debug_camera_enabled = not debug_camera_enabled
+	debug_camera.current = debug_camera_enabled
+	chase_camera.current = not debug_camera_enabled
+	if not debug_camera_enabled:
+		reset_chase_camera()
 
 
 func build_ui() -> void:
@@ -146,7 +383,7 @@ func build_ui() -> void:
 	character_label = make_label(Vector2(34, 122), 17, Color("#75f0c8"))
 	timer_label = make_label(Vector2(1085, 22), 22, Color.WHITE)
 	help_label = make_label(Vector2(20, 682), 16, Color(1, 1, 1, 0.86))
-	help_label.text = "WASD / ARROWS drive   SHIFT drift   SPACE use item   R restart"
+	help_label.text = "WASD / ARROWS drive   SHIFT drift   SPACE item   F3 camera   R restart"
 	for label in [lap_label, position_label, item_label, character_label, timer_label, help_label]:
 		layer.add_child(label)
 	character_portrait = TextureRect.new()
@@ -186,7 +423,13 @@ func make_label(pos: Vector2, font_size: int, color: Color) -> Label:
 	return label
 
 
+func _process(delta: float) -> void:
+	update_chase_camera(delta)
+
+
 func _physics_process(delta: float) -> void:
+	if Input.is_action_just_pressed("toggle_camera"):
+		toggle_debug_camera()
 	if race_state == RaceState.FINISHED and Input.is_action_just_pressed("ui_cancel"):
 		get_tree().change_scene_to_file("res://CharacterSelect.tscn")
 		return
@@ -230,7 +473,7 @@ func process_race(delta: float) -> void:
 	for kart in karts:
 		kart.off_track = distance_to_track(kart.position) > ROAD_HALF_WIDTH
 		check_checkpoint(kart)
-		if not WORLD_RECT.has_point(kart.position) or distance_to_track(kart.position) > WALL_OFFSET + 70.0:
+		if not world_contains(kart.position) or distance_to_track(kart.position) > WALL_OFFSET + 70.0:
 			start_recovery(kart)
 
 		if kart.wants_to_use_item and kart.held_item != "":
@@ -296,7 +539,7 @@ func use_item(kart: Kart) -> void:
 			flash("MUSHROOM BOOST!", 0.7)
 	elif kart.held_item == "BANANA":
 		var banana := Banana.new()
-		banana.position = kart.position - Vector2.from_angle(kart.rotation) * 38.0
+		banana.position = kart.position - kart.forward_vector() * 38.0
 		banana.owner_kart = kart
 		add_child(banana)
 		bananas.append(banana)
@@ -311,7 +554,13 @@ func start_recovery(kart: Kart) -> void:
 	kart.recovery_timer = 1.0
 	kart.visible = false
 	kart.controls_locked = true
-	get_tree().create_timer(1.0).timeout.connect(func(): recover_kart(kart))
+	get_tree().create_timer(1.0).timeout.connect(finish_recovery.bind(weakref(kart)))
+
+
+func finish_recovery(kart_reference: WeakRef) -> void:
+	var kart := kart_reference.get_ref() as Kart
+	if is_instance_valid(kart) and kart.recovery_timer > 0.0:
+		recover_kart(kart)
 
 
 func recover_kart(kart: Kart) -> void:
@@ -320,14 +569,16 @@ func recover_kart(kart: Kart) -> void:
 	var index := kart.last_checkpoint
 	var tangent := (track_points[(index + 1) % track_points.size()] - track_points[index]).normalized()
 	kart.position = track_points[index] + tangent * 28.0
-	kart.rotation = tangent.angle()
-	kart.velocity = Vector2.ZERO
+	kart.position.y = 0.0
+	kart.rotation.y = heading_from_direction(tangent)
+	kart.velocity = Vector3.ZERO
 	kart.current_speed = 0.0
 	kart.recovery_timer = 0.0
 	kart.visible = true
 	kart.controls_locked = race_state != RaceState.RACING
 	if kart == player:
 		flash("RECOVERED", 0.8)
+		reset_chase_camera()
 
 
 func sort_race_positions() -> void:
@@ -399,55 +650,24 @@ func format_time(value: float) -> String:
 	return "%02d:%05.2f" % [minutes, seconds]
 
 
-func distance_to_track(point: Vector2) -> float:
+func world_contains(point: Vector3) -> bool:
+	return WORLD_RECT.has_point(Vector2(point.x, point.z))
+
+
+func distance_to_track(point: Vector3) -> float:
 	var best := INF
 	for i in track_points.size():
 		best = min(best, distance_to_segment(point, track_points[i], track_points[(i + 1) % track_points.size()]))
 	return best
 
 
-func distance_to_segment(point: Vector2, start: Vector2, finish: Vector2) -> float:
+func distance_to_segment(point: Vector3, start: Vector3, finish: Vector3) -> float:
 	var segment := finish - start
 	var t: float = clampf((point - start).dot(segment) / segment.length_squared(), 0.0, 1.0)
 	return point.distance_to(start + segment * t)
 
 
-func _draw() -> void:
-	draw_rect(Rect2(0, 0, 1400, 820), Color("#4b9636"))
-	# Broad dirt shoulders, asphalt, and lane markings share the same closed path.
-	var closed := track_points.duplicate()
-	closed.append(track_points[0])
-	draw_polyline(closed, Color("#b48a55"), WALL_OFFSET * 2.0, true)
-	draw_polyline(closed, Color("#2d3138"), ROAD_HALF_WIDTH * 2.0, true)
-	draw_polyline(closed, Color("#e8dfb9"), 4.0, true)
-	for i in track_points.size():
-		var a := track_points[i]
-		var b := track_points[(i + 1) % track_points.size()]
-		var direction := (b - a).normalized()
-		var length := a.distance_to(b)
-		var cursor := 18.0
-		while cursor < length:
-			draw_line(a + direction * cursor, a + direction * min(cursor + 16.0, length), Color(1, 1, 1, 0.38), 2.0)
-			cursor += 34.0
-
-	# Finish-line checkerboard.
-	var finish_tangent := (track_points[1] - track_points[-1]).normalized()
-	var finish_normal := finish_tangent.orthogonal()
-	for row in 6:
-		for column in 2:
-			var center := track_points[0] + finish_normal * (row - 2.5) * 20.0 + finish_tangent * (column - 0.5) * 15.0
-			var color := Color.WHITE if (row + column) % 2 == 0 else Color("#15171c")
-			draw_rect(Rect2(center - Vector2(8, 10), Vector2(16, 20)), color)
-
-	# Ordered checkpoint gates are intentionally visible for MVP validation.
-	for i in track_points.size():
-		if i == 0:
-			continue
-		var point := track_points[i]
-		draw_circle(point, 7.0, Color(0.2, 0.9, 1.0, 0.50))
-
-
-class Kart extends CharacterBody2D:
+class Kart extends CharacterBody3D:
 	var kart_name := "KART"
 	var body_color := Color.RED
 	var is_ai := false
@@ -458,7 +678,7 @@ class Kart extends CharacterBody2D:
 	var resolved_turn_rate := KartStatsResolver.BASE_TURN_RATE
 	var resolved_drift_turn_rate := KartStatsResolver.BASE_DRIFT_TURN_RATE
 	var resolved_drift_min_speed := KartStatsResolver.BASE_DRIFT_MIN_SPEED
-	var track := PackedVector2Array()
+	var track := PackedVector3Array()
 	var track_width := 72.0
 	var controls_locked := true
 	var current_speed := 0.0
@@ -476,6 +696,7 @@ class Kart extends CharacterBody2D:
 	var checkpoint_cooldown := 0.0
 	var drift_charge := 0.0
 	var was_drifting := false
+	var boost_flame: MeshInstance3D
 
 	func configure_loadout(character: CharacterStats, vehicle: VehicleStats) -> void:
 		character_stats = character
@@ -490,31 +711,103 @@ class Kart extends CharacterBody2D:
 	func _ready() -> void:
 		collision_layer = 2
 		collision_mask = 1
-		var collision := CollisionShape2D.new()
-		var shape := CapsuleShape2D.new()
-		shape.radius = 12.0
-		shape.height = 30.0
+		motion_mode = CharacterBody3D.MOTION_MODE_FLOATING
+		var collision := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = Vector3(22.0, 9.0, 31.0)
 		collision.shape = shape
-		collision.rotation = PI * 0.5
+		collision.position.y = 4.5
 		add_child(collision)
-		queue_redraw()
+		build_visuals()
+
+	func forward_vector() -> Vector3:
+		return Vector3(sin(rotation.y), 0.0, cos(rotation.y)).normalized()
+
+	func build_visuals() -> void:
+		var body_material := flat_material(body_color)
+		var dark_material := flat_material(Color("#111318"))
+		var glass_material := flat_material(body_color.lightened(0.38))
+		var tire_material := flat_material(Color("#17191e"))
+
+		add_box_part("Body", Vector3(20.0, 7.0, 30.0), body_material, Vector3(0.0, 5.0, 0.0))
+		add_box_part("Nose", Vector3(14.0, 5.0, 11.0), body_material, Vector3(0.0, 6.0, 16.0))
+		add_box_part("Cockpit", Vector3(12.0, 5.0, 10.0), dark_material, Vector3(0.0, 10.0, 1.0))
+		add_box_part("Windshield", Vector3(10.0, 3.0, 2.5), glass_material, Vector3(0.0, 12.0, 6.0))
+
+		for x in [-12.0, 12.0]:
+			for z in [-10.5, 10.5]:
+				var wheel_mesh := CylinderMesh.new()
+				wheel_mesh.top_radius = 4.5
+				wheel_mesh.bottom_radius = 4.5
+				wheel_mesh.height = 5.0
+				wheel_mesh.radial_segments = 8
+				wheel_mesh.material = tire_material
+				var wheel := MeshInstance3D.new()
+				wheel.name = "Wheel"
+				wheel.mesh = wheel_mesh
+				wheel.position = Vector3(x, 4.0, z)
+				wheel.rotation.z = PI * 0.5
+				add_child(wheel)
+
+		var driver_mesh := SphereMesh.new()
+		driver_mesh.radius = 5.5
+		driver_mesh.height = 11.0
+		driver_mesh.radial_segments = 12
+		driver_mesh.rings = 6
+		driver_mesh.material = glass_material
+		var driver := MeshInstance3D.new()
+		driver.name = "Driver"
+		driver.mesh = driver_mesh
+		driver.position = Vector3(0.0, 16.0, -1.0)
+		add_child(driver)
+
+		var flame_surface := SurfaceTool.new()
+		flame_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+		flame_surface.set_material(flat_material(Color("#ffd23f")))
+		for vertex in [Vector3(-5, 3, -17), Vector3(5, 3, -17), Vector3(0, 3, -34), Vector3(0, 3, -34), Vector3(5, 3, -17), Vector3(-5, 3, -17)]:
+			flame_surface.set_normal(Vector3.UP)
+			flame_surface.add_vertex(vertex)
+		boost_flame = MeshInstance3D.new()
+		boost_flame.name = "BoostFlame"
+		boost_flame.mesh = flame_surface.commit()
+		boost_flame.visible = false
+		add_child(boost_flame)
+
+	func add_box_part(part_name: String, size: Vector3, material: Material, part_position: Vector3) -> void:
+		var mesh := BoxMesh.new()
+		mesh.size = size
+		mesh.material = material
+		var part := MeshInstance3D.new()
+		part.name = part_name
+		part.mesh = mesh
+		part.position = part_position
+		add_child(part)
+
+	func flat_material(color: Color) -> StandardMaterial3D:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = color
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		return material
 
 	func _physics_process(delta: float) -> void:
 		checkpoint_cooldown = max(0.0, checkpoint_cooldown - delta)
 		boost_timer = max(0.0, boost_timer - delta)
+		boost_flame.visible = boost_timer > 0.0
 		if recovery_timer > 0.0:
+			velocity = Vector3.ZERO
 			return
 		if spin_timer > 0.0:
 			spin_timer -= delta
-			rotation += delta * 10.0
+			rotation.y += delta * 10.0
 			current_speed = move_toward(current_speed, 0.0, 180.0 * delta)
-			velocity = Vector2.from_angle(rotation) * current_speed
-			move_and_slide()
+			velocity = forward_vector() * current_speed
+			move_flat()
 			return
 		if controls_locked:
 			current_speed = move_toward(current_speed, 0.0, 320.0 * delta)
-			velocity = Vector2.from_angle(rotation) * current_speed
-			move_and_slide()
+			velocity = forward_vector() * current_speed
+			move_flat()
 			return
 
 		var throttle := 0.0
@@ -525,8 +818,9 @@ class Kart extends CharacterBody2D:
 			if position.distance_to(target) < 70.0:
 				ai_waypoint = (ai_waypoint + 1) % track.size()
 				target = track[ai_waypoint]
-			var desired := (target - position).angle()
-			var difference := wrapf(desired - rotation, -PI, PI)
+			var direction := (target - position).normalized()
+			var desired := atan2(direction.x, direction.z)
+			var difference := wrapf(desired - rotation.y, -PI, PI)
 			steering = clamp(difference * 2.2, -1.0, 1.0)
 			throttle = 0.72 if abs(difference) > 0.65 else 1.0
 			if held_item != "" and (held_item == "MUSHROOM" or randf() < 0.006):
@@ -559,7 +853,7 @@ class Kart extends CharacterBody2D:
 		var speed_factor: float = clampf(abs(current_speed) / 135.0, 0.25, 1.0)
 		var direction_sign: float = signf(current_speed) if abs(current_speed) > 1.0 else 1.0
 		var turn_rate: float = resolved_turn_rate if not drifting else resolved_drift_turn_rate
-		rotation += steering * turn_rate * speed_factor * direction_sign * delta
+		rotation.y += steering * turn_rate * speed_factor * direction_sign * delta
 
 		if drifting:
 			drift_charge = min(drift_charge + delta, 1.4)
@@ -570,69 +864,135 @@ class Kart extends CharacterBody2D:
 			drift_charge = 0.0
 		was_drifting = drifting
 
-		var forward := Vector2.from_angle(rotation)
+		var forward := forward_vector()
 		if drifting:
-			velocity = velocity.lerp(forward * current_speed, 2.3 * delta)
+			velocity = velocity.lerp(forward * current_speed, min(1.0, 2.3 * delta))
 		else:
 			velocity = forward * current_speed
+		move_flat()
+		current_speed = velocity.dot(forward_vector())
+
+	func move_flat() -> void:
+		velocity.y = 0.0
 		move_and_slide()
-		current_speed = velocity.dot(Vector2.from_angle(rotation))
-
-	func _draw() -> void:
-		draw_circle(Vector2(-8, -13), 5.0, Color("#111318"))
-		draw_circle(Vector2(8, -13), 5.0, Color("#111318"))
-		draw_circle(Vector2(-8, 13), 5.0, Color("#111318"))
-		draw_circle(Vector2(8, 13), 5.0, Color("#111318"))
-		draw_rect(Rect2(-10, -15, 20, 30), body_color, true)
-		draw_polygon(PackedVector2Array([Vector2(-10, -15), Vector2(10, -15), Vector2(6, -23), Vector2(-6, -23)]), PackedColorArray([body_color]))
-		draw_circle(Vector2.ZERO, 6.0, body_color.lightened(0.35))
-		if boost_timer > 0.0:
-			draw_polygon(PackedVector2Array([Vector2(-5, 17), Vector2(5, 17), Vector2(0, 31)]), PackedColorArray([Color("#ffd23f")]))
+		position.y = 0.0
+		velocity.y = 0.0
 
 
-class ItemBox extends Node2D:
+class ItemBox extends Node3D:
 	var available := true
 	var cooldown := 0.0
 	var track_index := 0
 	var spin := 0.0
+	var visual_root: Node3D
+	var respawn_marker: MeshInstance3D
+	var question_label: Label3D
+
+	func _ready() -> void:
+		visual_root = Node3D.new()
+		visual_root.name = "ItemVisual"
+		visual_root.position.y = 16.0
+		visual_root.rotation.z = PI * 0.25
+		add_child(visual_root)
+
+		var cube_mesh := BoxMesh.new()
+		cube_mesh.size = Vector3(24.0, 24.0, 24.0)
+		cube_mesh.material = flat_material(Color("#43e6ff"))
+		var cube := MeshInstance3D.new()
+		cube.mesh = cube_mesh
+		visual_root.add_child(cube)
+
+		question_label = Label3D.new()
+		question_label.text = "?"
+		question_label.font_size = 84
+		question_label.pixel_size = 0.28
+		question_label.outline_size = 11
+		question_label.modulate = Color("#172335")
+		question_label.outline_modulate = Color.WHITE
+		question_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		question_label.no_depth_test = true
+		question_label.position = Vector3(0.0, 16.0, 0.0)
+		add_child(question_label)
+
+		var marker_mesh := CylinderMesh.new()
+		marker_mesh.top_radius = 10.0
+		marker_mesh.bottom_radius = 10.0
+		marker_mesh.height = 0.25
+		marker_mesh.radial_segments = 12
+		marker_mesh.material = flat_material(Color(0.3, 0.5, 0.6, 0.22))
+		respawn_marker = MeshInstance3D.new()
+		respawn_marker.mesh = marker_mesh
+		respawn_marker.position.y = 0.2
+		respawn_marker.visible = false
+		add_child(respawn_marker)
 
 	func _process(delta: float) -> void:
 		spin += delta
-		queue_redraw()
+		visual_root.rotation.y = spin
 
 	func tick(delta: float) -> void:
 		if not available:
 			cooldown -= delta
 			if cooldown <= 0.0:
 				available = true
-				queue_redraw()
+				visual_root.visible = true
+				question_label.visible = true
+				respawn_marker.visible = false
 
 	func collect() -> void:
 		available = false
 		cooldown = 6.0
-		queue_redraw()
+		visual_root.visible = false
+		question_label.visible = false
+		respawn_marker.visible = true
 
-	func _draw() -> void:
-		if not available:
-			draw_circle(Vector2.ZERO, 10.0, Color(0.3, 0.5, 0.6, 0.2))
-			return
-		var points := PackedVector2Array()
-		for i in 4:
-			points.append(Vector2.from_angle(spin + PI * 0.5 * i) * 19.0)
-		draw_polygon(points, PackedColorArray([Color("#43e6ff")]))
-		draw_polyline(PackedVector2Array([points[0], points[1], points[2], points[3], points[0]]), Color.WHITE, 3.0)
-		draw_string(ThemeDB.fallback_font, Vector2(-6, 7), "?", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#172335"))
+	func flat_material(color: Color) -> StandardMaterial3D:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = color
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		if color.a < 1.0:
+			material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		return material
 
 
-class Banana extends Node2D:
+class Banana extends Node3D:
 	var owner_kart: Kart
 	var life := 12.0
 	var grace := 0.65
 
+	func _ready() -> void:
+		var torus := TorusMesh.new()
+		torus.inner_radius = 3.5
+		torus.outer_radius = 11.0
+		torus.rings = 12
+		torus.ring_segments = 8
+		torus.material = flat_material(Color("#ffe54d"))
+		var fruit := MeshInstance3D.new()
+		fruit.mesh = torus
+		fruit.position.y = 5.0
+		fruit.scale.z = 0.72
+		add_child(fruit)
+
+		var stem_mesh := CylinderMesh.new()
+		stem_mesh.top_radius = 2.0
+		stem_mesh.bottom_radius = 2.5
+		stem_mesh.height = 7.0
+		stem_mesh.radial_segments = 6
+		stem_mesh.material = flat_material(Color("#6a4b1f"))
+		var stem := MeshInstance3D.new()
+		stem.mesh = stem_mesh
+		stem.position = Vector3(10.0, 7.0, 0.0)
+		stem.rotation.z = PI * 0.5
+		add_child(stem)
+
 	func _process(delta: float) -> void:
 		grace = max(0.0, grace - delta)
-		rotation += delta * 1.5
+		rotation.y += delta * 1.5
 
-	func _draw() -> void:
-		draw_arc(Vector2.ZERO, 14.0, 0.1, PI * 1.15, 18, Color("#ffe54d"), 8.0, true)
-		draw_circle(Vector2(13, 2), 3.0, Color("#6a4b1f"))
+	func flat_material(color: Color) -> StandardMaterial3D:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = color
+		material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		return material

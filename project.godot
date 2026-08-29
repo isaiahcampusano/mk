@@ -50,3 +50,7 @@ restart={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":82), Object(InputEventKey,"physical_keycode":4194309)]
 }
+toggle_camera={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":4194334)]
+}

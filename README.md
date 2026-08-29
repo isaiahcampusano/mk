@@ -4,8 +4,8 @@
 
 
 
-3D chase-cam racing game. track
-is inspired by Mario Circuit 3.
+A 3D chase-cam racing game built in Godot 4. The track is inspired by Mario
+Circuit 3, with flat-shaded low-poly visuals and two-kart arcade racing.
 
 **[Play MK Circuit in your browser](https://isaiahcampusano.github.io/mk/)**
 
@@ -30,11 +30,15 @@ the included GitHub Actions workflow.
 | Steer | A/D or Left/Right |
 | Drift and charge a mini-turbo | Shift while steering |
 | Use held item | Space |
+| Toggle chase / debug camera | F3 |
 | Restart race | R or Enter |
 
 ## Included MVP systems
 
-- A closed track with asphalt, penalizing dirt/grass, and physical walls
+- A real 3D ribbon track with asphalt, penalizing dirt/grass, and physical walls
+- Flat, unshaded low-poly geometry inspired by the readability of SNES racers
+- A smooth collision-aware chase camera plus an F3 whole-track debug camera
+- Low-poly karts, rotating item cubes, boost flames, and banana hazards
 - Four original drivers and four kart bodies backed by editable Godot Resources
 - A persistent driver → kart → countdown pre-race flow
 - Resolved loadout stats that scale speed, acceleration, handling, and drifting
@@ -47,8 +51,8 @@ the included GitHub Actions workflow.
 - Live lap, position, held-item, timer, and replay UI
 - Driver/kart identification in the race HUD and final standings
 
-The entire game is deliberately code-driven in `main.gd`, which makes the MVP
-easy to inspect, tune, and extend without generated editor metadata.
+The entire race remains deliberately code-driven in `main.gd`, which makes the
+3D geometry, camera, gameplay rules, and kart handling easy to inspect and tune.
 2d snes mk mario circuit race 
 
 wiki: https://www.mariowiki.com/Mario_Circuit_3
