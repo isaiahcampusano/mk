@@ -1,6 +1,7 @@
 # MK Circuit
 
-![Uploading image.png…]()
+<img width="827" height="469" alt="image" src="https://github.com/user-attachments/assets/f3c303cc-f68b-4ff0-8491-5beecf610c0f" />
+
 
 
 A complete, self-contained Godot 4 MVP of a two-kart top-down racer. The track
