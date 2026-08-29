@@ -522,7 +522,7 @@ func check_checkpoint(kart: Kart) -> void:
 	if index == 0:
 		kart.laps_completed = mini(kart.laps_completed + 1, TOTAL_LAPS)
 		kart.next_checkpoint = 1
-		if kart == player and kart.laps_completed >= TOTAL_LAPS:
+		if kart.laps_completed >= TOTAL_LAPS:
 			finish_race()
 		elif kart == player:
 			flash("LAP %d / %d" % [kart.laps_completed + 1, TOTAL_LAPS], 1.2)
@@ -597,6 +597,8 @@ func race_score(kart: Kart) -> float:
 
 
 func finish_race() -> void:
+	if race_state == RaceState.FINISHED:
+		return
 	race_state = RaceState.FINISHED
 	sort_race_positions()
 	result_panel.visible = true
