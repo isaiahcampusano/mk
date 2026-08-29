@@ -63,6 +63,7 @@ var chase_camera: Camera3D
 var debug_camera: Camera3D
 var debug_camera_enabled := false
 var camera_look_point := Vector3.ZERO
+var camera_forward_cache := Vector3.FORWARD
 
 
 func _ready() -> void:
@@ -351,6 +352,7 @@ func reset_chase_camera() -> void:
 	if not is_instance_valid(player) or not is_instance_valid(chase_camera):
 		return
 	var forward := player.forward_vector()
+	camera_forward_cache = forward
 	camera_look_point = player.global_position + Vector3.UP * 13.0 + forward * CAMERA_LOOK_AHEAD
 	chase_camera.global_position = player.global_position - forward * CAMERA_DISTANCE + Vector3.UP * CAMERA_HEIGHT
 	chase_camera.look_at(camera_look_point, Vector3.UP)
@@ -359,7 +361,9 @@ func reset_chase_camera() -> void:
 func update_chase_camera(delta: float) -> void:
 	if not is_instance_valid(player) or not is_instance_valid(chase_camera):
 		return
-	var forward := player.forward_vector()
+	if player.spin_timer <= 0.0:
+		camera_forward_cache = player.forward_vector()
+	var forward := camera_forward_cache
 	var anchor := player.global_position + Vector3.UP * 15.0
 	var desired_position := player.global_position - forward * CAMERA_DISTANCE + Vector3.UP * CAMERA_HEIGHT
 	var ray_query := PhysicsRayQueryParameters3D.create(anchor, desired_position, 1, [player.get_rid()])
