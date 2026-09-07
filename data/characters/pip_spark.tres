@@ -5,8 +5,10 @@
 
 [resource]
 script = ExtResource("1")
+character_id = &"pip_spark"
 character_name = "Pip Spark"
 portrait = ExtResource("2")
+driver_color = Color(1, 0.81, 0.36, 1)
 weight = 0.25
 base_speed_mod = 0.85
 base_accel_mod = 1.15

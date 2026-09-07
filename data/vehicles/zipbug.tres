@@ -5,8 +5,11 @@
 
 [resource]
 script = ExtResource("1")
+vehicle_id = &"zipbug"
 vehicle_name = "Zipbug"
 icon = ExtResource("2")
+model_profile = 2
+primary_color = Color(1, 0.76, 0.16, 1)
 speed_mod = 0.9
 accel_mod = 1.15
 handling_mod = 1.0

@@ -87,8 +87,7 @@ func make_card(vehicle: VehicleStats, index: int) -> PanelContainer:
 	var name_label := make_label(vehicle.vehicle_name, 25, Color.WHITE)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(name_label)
-	var roles := ["ALL-ROUNDER", "TOP SPEED", "QUICK LAUNCH", "DRIFT CONTROL"]
-	var role_label := make_label(roles[index], 14, Color("#ff72c6"))
+	var role_label := make_label(vehicle_role(vehicle), 14, Color("#ff72c6"))
 	role_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(role_label)
 
@@ -104,6 +103,19 @@ func make_card(vehicle: VehicleStats, index: int) -> PanelContainer:
 	choose.pressed.connect(func(): select_index(index))
 	stack.add_child(choose)
 	return card
+
+
+func vehicle_role(vehicle: VehicleStats) -> String:
+	var best := maxf(maxf(vehicle.speed_mod, vehicle.accel_mod), maxf(vehicle.handling_mod, vehicle.drift_mod))
+	if is_equal_approx(best, vehicle.speed_mod) and best > 1.0:
+		return "TOP SPEED"
+	if is_equal_approx(best, vehicle.accel_mod) and best > 1.0:
+		return "QUICK LAUNCH"
+	if is_equal_approx(best, vehicle.drift_mod) and best > 1.0:
+		return "DRIFT CONTROL"
+	if is_equal_approx(best, vehicle.handling_mod) and best > 1.0:
+		return "HANDLING"
+	return "ALL-ROUNDER"
 
 
 func make_stat_row(parent: VBoxContainer, stat_name: String, modifier: float) -> void:

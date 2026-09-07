@@ -15,8 +15,6 @@ const CAMERA_ROTATION_SMOOTH := 9.0
 const CAMERA_COLLISION_MARGIN := 8.0
 const POSITION_LABEL_HOME := Vector2(18.0, 46.0)
 
-enum RaceState { COUNTDOWN, RACING, FINISHED }
-
 var track_points := PackedVector3Array([
 	Vector3(210, 0, 345), Vector3(250, 0, 215), Vector3(370, 0, 130),
 	Vector3(565, 0, 105), Vector3(735, 0, 130), Vector3(850, 0, 220),
@@ -30,9 +28,7 @@ var karts: Array[Kart] = []
 var item_boxes: Array[ItemBox] = []
 var bananas: Array[Banana] = []
 var player: Kart
-var race_state := RaceState.COUNTDOWN
-var countdown := 3.99
-var race_time := 0.0
+var race_manager := RaceManager.new()
 var message_label: Label
 var hud_panel: Panel
 var lap_label: Label
@@ -68,6 +64,8 @@ var camera_forward_cache := Vector3.FORWARD
 
 func _ready() -> void:
 	RenderingServer.set_default_clear_color(Color("#78c6df"))
+	race_manager.configure(track_points, TOTAL_LAPS, CHECKPOINT_RADIUS)
+	race_manager.race_ended.connect(finish_race)
 	build_world_geometry()
 	build_walls()
 	build_cameras()
@@ -100,9 +98,7 @@ func start_race() -> void:
 		add_child(box)
 		item_boxes.append(box)
 
-	race_state = RaceState.COUNTDOWN
-	countdown = 3.99
-	race_time = 0.0
+	race_manager.start_race(karts)
 	result_panel.visible = false
 	message_label.visible = true
 	flash_text = ""
@@ -120,7 +116,7 @@ func create_kart(kart_name: String, spawn: Vector3, heading: float, color: Color
 	kart.kart_name = kart_name
 	kart.position = spawn
 	kart.rotation.y = heading
-	kart.body_color = color
+	kart.body_color = vehicle.primary_color if vehicle != null else color
 	kart.is_ai = ai
 	kart.configure_loadout(character, vehicle)
 	kart.track = track_points
@@ -505,7 +501,7 @@ func build_ui() -> void:
 	help_label.offset_right = -20.0
 	help_label.offset_top = -38.0
 	help_label.offset_bottom = -10.0
-	help_label.text = "WASD / ARROWS drive   SHIFT drift   SPACE item   F3 camera   R restart"
+	help_label.text = "WASD / ARROWS drive   X hop   SHIFT drift   SPACE item   F3 camera   R restart"
 	help_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
 	help_label.add_theme_constant_override("shadow_offset_x", 2)
 	help_label.add_theme_constant_override("shadow_offset_y", 2)
@@ -568,27 +564,26 @@ func _process(delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	if Input.is_action_just_pressed("toggle_camera"):
 		toggle_debug_camera()
-	if race_state == RaceState.FINISHED and Input.is_action_just_pressed("ui_cancel"):
+	if race_manager.state == RaceManager.State.FINISHED and Input.is_action_just_pressed("ui_cancel"):
 		get_tree().change_scene_to_file("res://CharacterSelect.tscn")
 		return
 	if Input.is_action_just_pressed("restart"):
 		start_race()
 		return
 
-	match race_state:
-		RaceState.COUNTDOWN:
-			countdown -= delta
+	match race_manager.state:
+		RaceManager.State.COUNTDOWN:
 			for kart in karts:
 				kart.controls_locked = true
-			if countdown <= 0.0:
-				race_state = RaceState.RACING
+			race_manager.advance(delta)
+			if race_manager.state == RaceManager.State.RACING:
 				for kart in karts:
 					kart.controls_locked = false
 				flash("GO!", 1.0)
-		RaceState.RACING:
-			race_time += delta
+		RaceManager.State.RACING:
+			race_manager.advance(delta)
 			process_race(delta)
-		RaceState.FINISHED:
+		RaceManager.State.FINISHED:
 			for kart in karts:
 				kart.controls_locked = true
 
@@ -611,7 +606,11 @@ func process_race(delta: float) -> void:
 
 	for kart in karts:
 		kart.off_track = distance_to_track(kart.position) > ROAD_HALF_WIDTH
-		check_checkpoint(kart)
+		var checkpoint_result := race_manager.register_checkpoint(kart)
+		if checkpoint_result == RaceManager.CheckpointResult.LAP_COMPLETED and kart == player:
+			flash("LAP %d / %d" % [kart.laps_completed + 1, TOTAL_LAPS], 1.2)
+		elif checkpoint_result == RaceManager.CheckpointResult.RACER_FINISHED:
+			kart.controls_locked = true
 		if not world_contains(kart.position) or distance_to_track(kart.position) > WALL_OFFSET + 70.0:
 			start_recovery(kart)
 
@@ -640,33 +639,9 @@ func process_race(delta: float) -> void:
 				banana.queue_free()
 				break
 
-	sort_race_positions()
-
-
-func check_checkpoint(kart: Kart) -> void:
-	var index := kart.next_checkpoint
-	var point := track_points[index]
-	if kart.position.distance_to(point) > CHECKPOINT_RADIUS:
-		return
-	var tangent := (track_points[(index + 1) % track_points.size()] - track_points[(index - 1 + track_points.size()) % track_points.size()]).normalized()
-	if kart.velocity.dot(tangent) <= 5.0:
-		return
-	if kart.checkpoint_cooldown > 0.0:
-		return
-
-	kart.last_checkpoint = index
-	# Only suppress repeat frames inside this gate. A longer delay can skip the
-	# next legitimate checkpoint at boost speed on shorter track segments.
-	kart.checkpoint_cooldown = 0.18
-	if index == 0:
-		kart.laps_completed = mini(kart.laps_completed + 1, TOTAL_LAPS)
-		kart.next_checkpoint = 1
-		if kart.laps_completed >= TOTAL_LAPS:
-			finish_race()
-		elif kart == player:
-			flash("LAP %d / %d" % [kart.laps_completed + 1, TOTAL_LAPS], 1.2)
-	else:
-		kart.next_checkpoint = (index + 1) % track_points.size()
+	race_manager.update_positions()
+	race_manager.validate_monotonic_progress()
+	race_manager.finalize_race_state()
 
 
 func use_item(kart: Kart) -> void:
@@ -713,33 +688,14 @@ func recover_kart(kart: Kart) -> void:
 	kart.current_speed = 0.0
 	kart.recovery_timer = 0.0
 	kart.visible = true
-	kart.controls_locked = race_state != RaceState.RACING
+	kart.controls_locked = race_manager.state != RaceManager.State.RACING
 	if kart == player:
 		flash("RECOVERED", 0.8)
 		reset_chase_camera()
 
 
-func sort_race_positions() -> void:
-	var ordered := karts.duplicate()
-	ordered.sort_custom(func(a: Kart, b: Kart): return race_score(a) > race_score(b))
-	for i in ordered.size():
-		ordered[i].race_position = i + 1
-
-
-func race_score(kart: Kart) -> float:
-	var checkpoint_progress := kart.next_checkpoint - 1
-	if kart.next_checkpoint == 0:
-		checkpoint_progress = track_points.size() - 1
-	var next_point := track_points[kart.next_checkpoint]
-	var closeness: float = clampf(1.0 - kart.position.distance_to(next_point) / 350.0, 0.0, 0.99)
-	return kart.laps_completed * 1000.0 + checkpoint_progress * 10.0 + closeness
-
-
 func finish_race() -> void:
-	if race_state == RaceState.FINISHED:
-		return
-	race_state = RaceState.FINISHED
-	sort_race_positions()
+	race_manager.update_positions()
 	result_panel.visible = true
 	message_label.visible = false
 	var ordered := karts.duplicate()
@@ -747,12 +703,12 @@ func finish_race() -> void:
 	var standings := ""
 	for kart in ordered:
 		standings += "%s  %s — %s / %s\n" % [ordinal(kart.race_position), kart.kart_name, kart.character_stats.character_name, kart.vehicle_stats.vehicle_name]
-	result_label.text = "RACE COMPLETE\n\n%s\nYour time  %s\n\nR / ENTER rematch    ESC customize" % [standings, format_time(race_time)]
+	result_label.text = "RACE COMPLETE\n\n%s\nYour time  %s\n\nR / ENTER rematch    ESC customize" % [standings, format_time(race_manager.elapsed_time)]
 
 
 func update_hud(delta: float) -> void:
-	if race_state == RaceState.COUNTDOWN:
-		message_label.text = str(max(1, int(ceil(countdown))))
+	if race_manager.state == RaceManager.State.COUNTDOWN:
+		message_label.text = str(max(1, int(ceil(race_manager.countdown))))
 	elif flash_timer > 0.0:
 		flash_timer -= delta
 		message_label.visible = true
@@ -792,7 +748,7 @@ func update_hud(delta: float) -> void:
 		if is_instance_valid(rival):
 			var rival_lap := mini(rival.laps_completed + 1, TOTAL_LAPS)
 			rival_status_label.text = "● RIVAL  %s  •  LAP %d/%d" % [ordinal(rival.race_position), rival_lap, TOTAL_LAPS]
-	timer_label.text = "⏱  " + format_time(race_time)
+		timer_label.text = "⏱  " + format_time(race_manager.elapsed_time)
 
 
 func update_item_slot(item: String) -> void:
@@ -926,6 +882,15 @@ func distance_to_segment(point: Vector3, start: Vector3, finish: Vector3) -> flo
 
 
 class Kart extends CharacterBody3D:
+	const HOP_IMPULSE := 105.0
+	const HOP_GRAVITY := 310.0
+	const MIN_DRIFT_TIME_FOR_BOOST := 0.35
+	const MAX_DRIFT_TIME := 1.4
+	const DRIFT_GRIP_MULTIPLIER := 0.42
+	const MINI_TURBO_IMPULSE := 92.0
+	const MINI_TURBO_MIN_DURATION := 0.45
+	const MINI_TURBO_MAX_DURATION := 0.94
+
 	var kart_name := "KART"
 	var body_color := Color.RED
 	var is_ai := false
@@ -947,13 +912,24 @@ class Kart extends CharacterBody3D:
 	var next_checkpoint := 1
 	var last_checkpoint := 0
 	var race_position := 1
+	var checkpoint_armed := true
+	var has_finished := false
+	var finish_order := 0
+	var debug_last_progress := 0.0
 	var ai_waypoint := 1
 	var boost_timer := 0.0
 	var spin_timer := 0.0
 	var recovery_timer := 0.0
-	var checkpoint_cooldown := 0.0
 	var drift_charge := 0.0
-	var was_drifting := false
+	var is_drifting := false
+	var drift_direction := 0.0
+	var is_hopping := false
+	var hop_height := 0.0
+	var hop_velocity := 0.0
+	var mini_turbo_timer := 0.0
+	var mini_turbo_duration := 0.0
+	var mini_turbo_strength := 0.0
+	var visual_root: Node3D
 	var boost_flame: MeshInstance3D
 
 	func configure_loadout(character: CharacterStats, vehicle: VehicleStats) -> void:
@@ -982,18 +958,40 @@ class Kart extends CharacterBody3D:
 		return Vector3(sin(rotation.y), 0.0, cos(rotation.y)).normalized()
 
 	func build_visuals() -> void:
+		visual_root = Node3D.new()
+		visual_root.name = "KartVisual"
+		add_child(visual_root)
 		var body_material := flat_material(body_color)
 		var dark_material := flat_material(Color("#111318"))
 		var glass_material := flat_material(body_color.lightened(0.38))
+		var driver_material := flat_material(character_stats.driver_color)
 		var tire_material := flat_material(Color("#17191e"))
+		var body_size := Vector3(20.0, 7.0, 30.0)
+		var nose_size := Vector3(14.0, 5.0, 11.0)
+		var wheel_x := 12.0
+		var wheel_z := 10.5
+		match vehicle_stats.model_profile:
+			1:
+				body_size = Vector3(19.0, 6.0, 36.0)
+				nose_size = Vector3(13.0, 4.0, 14.0)
+				wheel_z = 13.0
+			2:
+				body_size = Vector3(18.0, 8.0, 25.0)
+				nose_size = Vector3(12.0, 6.0, 9.0)
+				wheel_x = 11.0
+				wheel_z = 8.5
+			3:
+				body_size = Vector3(24.0, 6.0, 29.0)
+				nose_size = Vector3(18.0, 4.0, 10.0)
+				wheel_x = 14.0
 
-		add_box_part("Body", Vector3(20.0, 7.0, 30.0), body_material, Vector3(0.0, 5.0, 0.0))
-		add_box_part("Nose", Vector3(14.0, 5.0, 11.0), body_material, Vector3(0.0, 6.0, 16.0))
+		add_box_part("Body", body_size, body_material, Vector3(0.0, 5.0, 0.0))
+		add_box_part("Nose", nose_size, body_material, Vector3(0.0, 6.0, body_size.z * 0.5 + nose_size.z * 0.25))
 		add_box_part("Cockpit", Vector3(12.0, 5.0, 10.0), dark_material, Vector3(0.0, 10.0, 1.0))
 		add_box_part("Windshield", Vector3(10.0, 3.0, 2.5), glass_material, Vector3(0.0, 12.0, 6.0))
 
-		for x in [-12.0, 12.0]:
-			for z in [-10.5, 10.5]:
+		for x in [-wheel_x, wheel_x]:
+			for z in [-wheel_z, wheel_z]:
 				var wheel_mesh := CylinderMesh.new()
 				wheel_mesh.top_radius = 4.5
 				wheel_mesh.bottom_radius = 4.5
@@ -1005,19 +1003,19 @@ class Kart extends CharacterBody3D:
 				wheel.mesh = wheel_mesh
 				wheel.position = Vector3(x, 4.0, z)
 				wheel.rotation.z = PI * 0.5
-				add_child(wheel)
+				visual_root.add_child(wheel)
 
 		var driver_mesh := SphereMesh.new()
 		driver_mesh.radius = 5.5
 		driver_mesh.height = 11.0
 		driver_mesh.radial_segments = 12
 		driver_mesh.rings = 6
-		driver_mesh.material = glass_material
+		driver_mesh.material = driver_material
 		var driver := MeshInstance3D.new()
 		driver.name = "Driver"
 		driver.mesh = driver_mesh
 		driver.position = Vector3(0.0, 16.0, -1.0)
-		add_child(driver)
+		visual_root.add_child(driver)
 
 		var flame_surface := SurfaceTool.new()
 		flame_surface.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -1029,7 +1027,7 @@ class Kart extends CharacterBody3D:
 		boost_flame.name = "BoostFlame"
 		boost_flame.mesh = flame_surface.commit()
 		boost_flame.visible = false
-		add_child(boost_flame)
+		visual_root.add_child(boost_flame)
 
 	func add_box_part(part_name: String, size: Vector3, material: Material, part_position: Vector3) -> void:
 		var mesh := BoxMesh.new()
@@ -1039,7 +1037,7 @@ class Kart extends CharacterBody3D:
 		part.name = part_name
 		part.mesh = mesh
 		part.position = part_position
-		add_child(part)
+		visual_root.add_child(part)
 
 	func flat_material(color: Color) -> StandardMaterial3D:
 		var material := StandardMaterial3D.new()
@@ -1049,8 +1047,8 @@ class Kart extends CharacterBody3D:
 		return material
 
 	func _physics_process(delta: float) -> void:
-		checkpoint_cooldown = max(0.0, checkpoint_cooldown - delta)
 		boost_timer = max(0.0, boost_timer - delta)
+		update_hop(delta)
 		boost_flame.visible = boost_timer > 0.0
 		if recovery_timer > 0.0:
 			velocity = Vector3.ZERO
@@ -1063,6 +1061,7 @@ class Kart extends CharacterBody3D:
 			move_flat()
 			return
 		if controls_locked:
+			cancel_drift()
 			current_speed = move_toward(current_speed, 0.0, 320.0 * delta)
 			velocity = forward_vector() * current_speed
 			move_flat()
@@ -1070,7 +1069,6 @@ class Kart extends CharacterBody3D:
 
 		var throttle := 0.0
 		var steering := 0.0
-		var drifting := false
 		if is_ai:
 			var target := track[ai_waypoint]
 			if position.distance_to(target) < 70.0:
@@ -1086,7 +1084,15 @@ class Kart extends CharacterBody3D:
 		else:
 			throttle = Input.get_axis("brake", "accelerate")
 			steering = Input.get_axis("steer_left", "steer_right")
-			drifting = Input.is_action_pressed("drift") and abs(steering) > 0.2 and abs(current_speed) > resolved_drift_min_speed
+			if Input.is_action_just_pressed("hop") and not is_hopping:
+				start_hop()
+			var wants_drift: bool = Input.is_action_pressed("drift") and not is_hopping and abs(current_speed) > resolved_drift_min_speed
+			if not is_drifting and wants_drift and abs(steering) > 0.2:
+				start_drift(steering)
+			elif is_drifting and not wants_drift:
+				finish_drift()
+			if is_drifting:
+				steering = maxf(absf(steering), 0.35) * drift_direction
 			if Input.is_action_just_pressed("use_item"):
 				wants_to_use_item = true
 
@@ -1110,25 +1116,71 @@ class Kart extends CharacterBody3D:
 			current_speed = clamp(current_speed, -100.0, max_speed)
 		var speed_factor: float = clampf(abs(current_speed) / 135.0, 0.25, 1.0)
 		var direction_sign: float = signf(current_speed) if abs(current_speed) > 1.0 else 1.0
-		var turn_rate: float = resolved_turn_rate if not drifting else resolved_drift_turn_rate
+		var turn_rate: float = resolved_turn_rate if not is_drifting else resolved_drift_turn_rate
 		rotation.y -= steering * turn_rate * speed_factor * direction_sign * delta
 
-		if drifting:
-			drift_charge = min(drift_charge + delta, 1.4)
-		else:
-			if was_drifting and drift_charge > 0.35:
-				boost_timer = max(boost_timer, 0.45 + drift_charge * 0.35)
-				current_speed += 55.0 + drift_charge * 34.0
-			drift_charge = 0.0
-		was_drifting = drifting
+		if is_drifting:
+			drift_charge = minf(drift_charge + delta, MAX_DRIFT_TIME)
+		apply_mini_turbo(delta)
 
 		var forward := forward_vector()
-		if drifting:
-			velocity = velocity.lerp(forward * current_speed, min(1.0, 2.3 * delta))
+		if is_drifting:
+			velocity = velocity.lerp(forward * current_speed, minf(1.0, DRIFT_GRIP_MULTIPLIER * 5.5 * delta))
 		else:
 			velocity = forward * current_speed
 		move_flat()
 		current_speed = velocity.dot(forward_vector())
+
+	func start_hop() -> void:
+		is_hopping = true
+		hop_velocity = HOP_IMPULSE
+		cancel_drift()
+
+	func update_hop(delta: float) -> void:
+		if not is_hopping:
+			return
+		hop_velocity -= HOP_GRAVITY * delta
+		hop_height = maxf(0.0, hop_height + hop_velocity * delta)
+		visual_root.position.y = hop_height
+		var stretch := clampf(absf(hop_velocity) / HOP_IMPULSE, 0.0, 1.0) * 0.06
+		visual_root.scale = Vector3(1.0 - stretch * 0.5, 1.0 + stretch, 1.0 - stretch * 0.5)
+		# TODO: replace this squash-and-stretch with a authored hop animation when one exists.
+		if hop_height <= 0.0 and hop_velocity < 0.0:
+			is_hopping = false
+			hop_velocity = 0.0
+			visual_root.position.y = 0.0
+			visual_root.scale = Vector3.ONE
+
+	func start_drift(steering: float) -> void:
+		is_drifting = true
+		drift_direction = signf(steering)
+		drift_charge = 0.0
+
+	func finish_drift() -> void:
+		if not is_drifting:
+			return
+		is_drifting = false
+		drift_direction = 0.0
+		if drift_charge >= MIN_DRIFT_TIME_FOR_BOOST:
+			var charge_ratio := clampf((drift_charge - MIN_DRIFT_TIME_FOR_BOOST) / (MAX_DRIFT_TIME - MIN_DRIFT_TIME_FOR_BOOST), 0.0, 1.0)
+			mini_turbo_strength = lerpf(0.55, 1.0, charge_ratio)
+			mini_turbo_duration = lerpf(MINI_TURBO_MIN_DURATION, MINI_TURBO_MAX_DURATION, charge_ratio)
+			mini_turbo_timer = mini_turbo_duration
+			boost_timer = maxf(boost_timer, mini_turbo_duration)
+		drift_charge = 0.0
+
+	func cancel_drift() -> void:
+		is_drifting = false
+		drift_direction = 0.0
+		drift_charge = 0.0
+
+	func apply_mini_turbo(delta: float) -> void:
+		if mini_turbo_timer <= 0.0:
+			return
+		var decay := mini_turbo_timer / mini_turbo_duration
+		current_speed += MINI_TURBO_IMPULSE * mini_turbo_strength * decay * (2.0 * delta / mini_turbo_duration)
+		current_speed = minf(current_speed, resolved_top_speed * 1.35)
+		mini_turbo_timer = maxf(0.0, mini_turbo_timer - delta)
 
 	func move_flat() -> void:
 		velocity.y = 0.0
@@ -1138,20 +1190,28 @@ class Kart extends CharacterBody3D:
 
 
 class ItemBox extends Node3D:
+	const ROTATE_SPEED_DEGREES := 90.0
+	const PULSE_AMPLITUDE := 0.08
+	const PULSE_SPEED := 2.4
+
 	var available := true
 	var cooldown := 0.0
 	var track_index := 0
-	var spin := 0.0
+	var animation_time := 0.0
+	var animation_phase := 0.0
+	var base_scale := Vector3.ONE
 	var visual_root: Node3D
 	var respawn_marker: MeshInstance3D
 	var question_label: Label3D
 
 	func _ready() -> void:
+		initialize_animation()
 		visual_root = Node3D.new()
 		visual_root.name = "ItemVisual"
 		visual_root.position.y = 16.0
 		visual_root.rotation.z = PI * 0.25
 		add_child(visual_root)
+		base_scale = visual_root.scale
 
 		var cube_mesh := BoxMesh.new()
 		cube_mesh.size = Vector3(24.0, 24.0, 24.0)
@@ -1185,8 +1245,12 @@ class ItemBox extends Node3D:
 		add_child(respawn_marker)
 
 	func _process(delta: float) -> void:
-		spin += delta
-		visual_root.rotation.y = spin
+		animation_time += delta
+		visual_root.rotation.y = fmod(animation_time * deg_to_rad(ROTATE_SPEED_DEGREES) + animation_phase, TAU)
+		visual_root.scale = base_scale * (1.0 + PULSE_AMPLITUDE * sin(animation_time * PULSE_SPEED + animation_phase))
+
+	func initialize_animation() -> void:
+		animation_phase = fmod(absf(position.x * 0.017 + position.z * 0.031 + track_index * 0.73), TAU)
 
 	func tick(delta: float) -> void:
 		if not available:

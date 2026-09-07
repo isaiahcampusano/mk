@@ -42,6 +42,10 @@ drift={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":4194324), Object(InputEventKey,"physical_keycode":16)]
 }
+hop={
+"deadzone": 0.2,
+"events": [Object(InputEventKey,"physical_keycode":88)]
+}
 use_item={
 "deadzone": 0.2,
 "events": [Object(InputEventKey,"physical_keycode":32)]

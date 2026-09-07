@@ -27,6 +27,7 @@ the included GitHub Actions workflow.
 | Return from kart selection | Escape |
 | Accelerate / brake | W/S or Up/Down |
 | Steer | A/D or Left/Right |
+| Hop | X |
 | Drift and charge a mini-turbo | Shift while steering |
 | Use held item | Space |
 | Toggle chase / debug camera | F3 |
@@ -41,7 +42,7 @@ the included GitHub Actions workflow.
 - Four original drivers and four kart bodies backed by editable Godot Resources
 - A persistent driver → kart → countdown pre-race flow
 - Resolved loadout stats that scale speed, acceleration, handling, and drifting
-- Responsive acceleration, reverse, speed-scaled steering, drift, and mini-turbo
+- Responsive acceleration, reverse, speed-scaled steering, hop, drift, and mini-turbo
 - 16 ordered checkpoints; skipped or backward checkpoints never count
 - Countdown → Racing → Finished state machine and three-lap races
 - A waypoint-following rival subject to the same checkpoints and walls

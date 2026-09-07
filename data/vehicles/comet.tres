@@ -5,8 +5,11 @@
 
 [resource]
 script = ExtResource("1")
+vehicle_id = &"comet"
 vehicle_name = "Comet"
 icon = ExtResource("2")
+model_profile = 0
+primary_color = Color(0.937, 0.247, 0.278, 1)
 speed_mod = 1.0
 accel_mod = 1.0
 handling_mod = 1.0

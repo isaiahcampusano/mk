@@ -5,8 +5,11 @@
 
 [resource]
 script = ExtResource("1")
+vehicle_id = &"slidewinder"
 vehicle_name = "Slidewinder"
 icon = ExtResource("2")
+model_profile = 3
+primary_color = Color(0.42, 0.86, 0.48, 1)
 speed_mod = 0.95
 accel_mod = 0.95
 handling_mod = 1.15

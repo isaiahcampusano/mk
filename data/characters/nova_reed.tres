@@ -5,8 +5,10 @@
 
 [resource]
 script = ExtResource("1")
+character_id = &"nova_reed"
 character_name = "Nova Reed"
 portrait = ExtResource("2")
+driver_color = Color(0.42, 0.88, 1, 1)
 weight = 0.45
 base_speed_mod = 0.95
 base_accel_mod = 1.05

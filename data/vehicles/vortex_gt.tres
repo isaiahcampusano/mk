@@ -5,8 +5,11 @@
 
 [resource]
 script = ExtResource("1")
+vehicle_id = &"vortex_gt"
 vehicle_name = "Vortex GT"
 icon = ExtResource("2")
+model_profile = 1
+primary_color = Color(0.235, 0.439, 1, 1)
 speed_mod = 1.15
 accel_mod = 0.9
 handling_mod = 0.95

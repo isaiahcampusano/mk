@@ -88,8 +88,7 @@ func make_card(character: CharacterStats, index: int) -> PanelContainer:
 	var name_label := make_label(character.character_name, 25, Color.WHITE)
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(name_label)
-	var class_names := ["LIGHT / NIMBLE", "MEDIUM-LIGHT", "MEDIUM-HEAVY", "HEAVY / POWER"]
-	var class_label := make_label(class_names[index], 14, Color("#65e5ff"))
+	var class_label := make_label(character_class(character), 14, Color("#65e5ff"))
 	class_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	stack.add_child(class_label)
 
@@ -104,6 +103,16 @@ func make_card(character: CharacterStats, index: int) -> PanelContainer:
 	choose.pressed.connect(func(): select_index(index))
 	stack.add_child(choose)
 	return card
+
+
+func character_class(character: CharacterStats) -> String:
+	if character.weight < 0.35:
+		return "LIGHT / NIMBLE"
+	if character.weight < 0.55:
+		return "MEDIUM-LIGHT"
+	if character.weight < 0.75:
+		return "MEDIUM-HEAVY"
+	return "HEAVY / POWER"
 
 
 func make_stat_row(parent: VBoxContainer, stat_name: String, modifier: float) -> void:
