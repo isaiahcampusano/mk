@@ -1,10 +1,9 @@
 extends Node3D
 
 const TOTAL_LAPS := 3
-const ROAD_HALF_WIDTH := 72.0
+const ROAD_HALF_WIDTH := 100.0
 const WALL_OFFSET := 142.0
 const CHECKPOINT_RADIUS := 92.0
-const WORLD_RECT := Rect2(40, 35, 1320, 750)
 const WALL_HEIGHT := 20.0
 const WALL_THICKNESS := 7.0
 const CAMERA_DISTANCE := 164.0
@@ -16,14 +15,21 @@ const CAMERA_COLLISION_MARGIN := 8.0
 const POSITION_LABEL_HOME := Vector2(18.0, 46.0)
 
 var track_points := PackedVector3Array([
-	Vector3(210, 0, 345), Vector3(250, 0, 215), Vector3(370, 0, 130),
-	Vector3(565, 0, 105), Vector3(735, 0, 130), Vector3(850, 0, 220),
-	Vector3(1035, 0, 175), Vector3(1210, 0, 240), Vector3(1260, 0, 365),
-	Vector3(1185, 0, 475), Vector3(1120, 0, 650), Vector3(930, 0, 700),
-	Vector3(770, 0, 625), Vector3(610, 0, 705), Vector3(405, 0, 675),
-	Vector3(240, 0, 565)
+	Vector3(210, 0, 345), Vector3(245, 0, 225),
+	Vector3(345, 0, 145), Vector3(465, 0, 120),
+	Vector3(590, 0, 110), Vector3(715, 0, 125),
+	Vector3(830, 0, 175), Vector3(955, 0, 190),
+	Vector3(1075, 0, 190), Vector3(1195, 0, 235),
+	Vector3(1275, 0, 330), Vector3(1250, 0, 445),
+	Vector3(1170, 0, 535), Vector3(1055, 0, 585),
+	Vector3(930, 0, 590), Vector3(810, 0, 565),
+	Vector3(690, 0, 610), Vector3(575, 0, 660),
+	Vector3(450, 0, 690), Vector3(325, 0, 695),
+	Vector3(205, 0, 675), Vector3(100, 0, 600),
+	Vector3(60, 0, 480), Vector3(85, 0, 360),
 ])
 
+var world_rect: Rect2
 var karts: Array[Kart] = []
 var item_boxes: Array[ItemBox] = []
 var bananas: Array[Banana] = []
@@ -63,6 +69,7 @@ var camera_forward_cache := Vector3.FORWARD
 
 
 func _ready() -> void:
+	world_rect = compute_world_rect(150.0)
 	RenderingServer.set_default_clear_color(Color("#78c6df"))
 	race_manager.configure(track_points, TOTAL_LAPS, CHECKPOINT_RADIUS)
 	race_manager.race_ended.connect(finish_race)
@@ -71,6 +78,19 @@ func _ready() -> void:
 	build_cameras()
 	build_ui()
 	start_race()
+
+
+func compute_world_rect(margin: float) -> Rect2:
+	var min_x := INF
+	var max_x := -INF
+	var min_z := INF
+	var max_z := -INF
+	for point in track_points:
+		min_x = minf(min_x, point.x)
+		max_x = maxf(max_x, point.x)
+		min_z = minf(min_z, point.z)
+		max_z = maxf(max_z, point.z)
+	return Rect2(min_x - margin, min_z - margin, (max_x - min_x) + 2.0 * margin, (max_z - min_z) + 2.0 * margin)
 
 
 func start_race() -> void:
@@ -88,10 +108,36 @@ func start_race() -> void:
 	var start_tangent := (track_points[1] - track_points[0]).normalized()
 	var start_heading := heading_from_direction(start_tangent)
 	var normal := planar_normal(start_tangent)
-	player = create_kart("PLAYER", track_points[0] - start_tangent * 18.0 - normal * 24.0, start_heading, Color("#ef3f47"), false, RaceConfig.player_character, RaceConfig.player_vehicle)
-	create_kart("RIVAL", track_points[0] - start_tangent * 58.0 + normal * 25.0, start_heading, Color("#3e70ff"), true, RaceConfig.ai_character, RaceConfig.ai_vehicle)
+	var offsets := [-75, -45, -15, 15, 45, 75]
+	var fallback_colors := [
+		Color("#ef3f47"), Color("#3e70ff"), Color("#52e84a"),
+		Color("#f7cf3c"), Color("#ff7a3d"), Color("#c46cff"),
+	]
+	for index in 6:
+		var is_player := index == 0
+		var character: CharacterStats
+		var vehicle: VehicleStats
+		if is_player:
+			character = RaceConfig.player_character
+			vehicle = RaceConfig.player_vehicle
+		else:
+			var ai_offset := index - 1
+			character = RaceConfig.characters[(RaceConfig.ai_character_index + ai_offset) % RaceConfig.characters.size()]
+			vehicle = RaceConfig.vehicles[(RaceConfig.ai_vehicle_index + ai_offset) % RaceConfig.vehicles.size()]
+		var spawn_pos: Vector3 = track_points[0] - start_tangent * 18.0 + normal * offsets[index]
+		var kart := create_kart(
+			"PLAYER" if is_player else "COM %d" % index,
+			spawn_pos,
+			start_heading,
+			fallback_colors[index],
+			not is_player,
+			character,
+			vehicle
+		)
+		if is_player:
+			player = kart
 
-	for index in [3, 6, 9, 12, 14]:
+	for index in [3, 4, 7, 8, 11, 12, 15, 17, 18, 20]:
 		var box := ItemBox.new()
 		box.position = track_points[index]
 		box.track_index = index
@@ -145,7 +191,7 @@ func build_ground() -> void:
 	var ground_visual := MeshInstance3D.new()
 	ground_visual.name = "GrassGround"
 	ground_visual.mesh = ground_mesh
-	ground_visual.position = Vector3(700.0, -0.55, 410.0)
+	ground_visual.position = Vector3(675.0, -0.55, 400.0)
 	add_child(ground_visual)
 
 	var floor_body := StaticBody3D.new()
@@ -154,9 +200,9 @@ func build_ground() -> void:
 	floor_body.collision_mask = 0
 	var floor_collision := CollisionShape3D.new()
 	var floor_shape := BoxShape3D.new()
-	floor_shape.size = Vector3(1500.0, 1.0, 900.0)
+	floor_shape.size = Vector3(1900.0, 1.0, 1200.0)
 	floor_collision.shape = floor_shape
-	floor_collision.position = Vector3(700.0, -0.55, 410.0)
+	floor_collision.position = Vector3(675.0, -0.55, 400.0)
 	floor_body.add_child(floor_collision)
 	add_child(floor_body)
 
@@ -723,7 +769,14 @@ func update_hud(delta: float) -> void:
 			animate_lap_change()
 		last_laps_completed = player.laps_completed
 
-		var position_icon := "🏆" if player.race_position == 1 else "🥈"
+		var position_icon := "🏁"
+		match player.race_position:
+			1:
+				position_icon = "🏆"
+			2:
+				position_icon = "🥈"
+			3:
+				position_icon = "🥉"
 		position_label.text = "%s  %s" % [position_icon, ordinal(player.race_position)]
 		position_label.add_theme_color_override("font_color", Color("#ffd548") if player.race_position == 1 else Color("#d9e5f1"))
 		if player.race_position != last_race_position:
@@ -865,7 +918,7 @@ func format_time(value: float) -> String:
 
 
 func world_contains(point: Vector3) -> bool:
-	return WORLD_RECT.has_point(Vector2(point.x, point.z))
+	return world_rect.has_point(Vector2(point.x, point.z))
 
 
 func distance_to_track(point: Vector3) -> float:
