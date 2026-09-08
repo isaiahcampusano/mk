@@ -32,11 +32,48 @@ jobs:
       - name: Import project
         run: godot --headless --editor --path . --quit
 
+      - name: Run Godot tests
+        run: |
+          run_test() {
+            set +e
+            output=$(godot "$@" 2>&1)
+            status=$?
+            set -e
+            echo "$output"
+            if [ "$status" -ne 0 ] || echo "$output" | grep -Eq 'SCRIPT ERROR|^ERROR:'; then
+              return 1
+            fi
+          }
+          run_test --headless --path . tests/TestRaceConfig.tscn
+          run_test --headless --path . tests/TestKartMechanics.tscn
+          run_test --headless --path . tests/TestMainConfiguration.tscn
+          run_test --headless --path . --script tests/test_race_manager.gd
+
       - name: Export game for the web
         run: |
           mkdir -p build/web
           godot --headless --path . --export-release Web build/web/index.html
           touch build/web/.nojekyll
+
+      - name: Install Web smoke dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke test exported game
+        run: npm run test:web
+
+      - name: Upload smoke diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-smoke-diagnostics
+          path: |
+            .artifacts/playwright-report
+            .artifacts/test-results
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5

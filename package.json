@@ -1,0 +1,11 @@
+{
+  "name": "mk-circuit-ci",
+  "private": true,
+  "scripts": {
+    "postinstall": "node -e \"require('node:fs').writeFileSync('node_modules/.gdignore', '')\"",
+    "test:web": "playwright test tests/web_export_smoke.spec.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

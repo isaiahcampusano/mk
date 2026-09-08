@@ -69,8 +69,18 @@ var camera_forward_cache := Vector3.FORWARD
 
 
 func _ready() -> void:
-	world_rect = compute_world_rect(150.0)
 	RenderingServer.set_default_clear_color(Color("#78c6df"))
+	if not RaceConfig.is_catalog_valid():
+		set_process(false)
+		set_physics_process(false)
+		set_process_input(false)
+		build_content_error_ui()
+		RaceConfig.report_web_smoke("content_error", {
+			"catalog_valid": false,
+			"error": RaceConfig.get_catalog_error(),
+		})
+		return
+	world_rect = compute_world_rect(150.0)
 	race_manager.configure(track_points, TOTAL_LAPS, CHECKPOINT_RADIUS)
 	race_manager.race_ended.connect(finish_race)
 	build_world_geometry()
@@ -78,6 +88,30 @@ func _ready() -> void:
 	build_cameras()
 	build_ui()
 	start_race()
+	report_web_smoke()
+
+
+func build_content_error_ui() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	var background := ColorRect.new()
+	background.color = Color("#111829")
+	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(background)
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.position = Vector2(-360, -130)
+	panel.size = Vector2(720, 260)
+	panel.add_theme_stylebox_override("panel", make_panel_style(Color("#321c29"), Color("#ff6b7a"), 16, 2))
+	background.add_child(panel)
+	var message := Label.new()
+	message.text = "CONTENT COULD NOT BE LOADED\n\nDriver and kart data is unavailable. Reload the game.\n\n" + RaceConfig.get_catalog_error()
+	message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message.add_theme_font_size_override("font_size", 22)
+	message.add_theme_color_override("font_color", Color("#ffd8dc"))
+	panel.add_child(message)
 
 
 func compute_world_rect(margin: float) -> Rect2:
@@ -94,6 +128,9 @@ func compute_world_rect(margin: float) -> Rect2:
 
 
 func start_race() -> void:
+	if not RaceConfig.is_catalog_valid():
+		push_error("Race cannot start: " + RaceConfig.get_catalog_error())
+		return
 	for kart in karts:
 		kart.queue_free()
 	for box in item_boxes:
@@ -155,6 +192,35 @@ func start_race() -> void:
 	reset_hud_feedback()
 	update_item_slot("")
 	reset_chase_camera()
+
+
+func report_web_smoke() -> void:
+	if not RaceConfig.is_web_smoke_enabled():
+		return
+	if not is_instance_valid(player):
+		RaceConfig.report_web_smoke("race_error", {"error": "Player kart was not created"})
+		return
+	var body := player.visual_root.get_node_or_null("Body") as MeshInstance3D
+	var driver := player.visual_root.get_node_or_null("Driver") as MeshInstance3D
+	var body_mesh := body.mesh as BoxMesh if body != null else null
+	var driver_mesh := driver.mesh as SphereMesh if driver != null else null
+	var body_material := body_mesh.material as StandardMaterial3D if body_mesh != null else null
+	var driver_material := driver_mesh.material as StandardMaterial3D if driver_mesh != null else null
+	RaceConfig.report_web_smoke("race", {
+		"catalog_valid": RaceConfig.is_catalog_valid(),
+		"kart_count": karts.size(),
+		"character_id": String(player.character_stats.character_id),
+		"vehicle_id": String(player.vehicle_stats.vehicle_id),
+		"model_profile": player.vehicle_stats.model_profile,
+		"body_size": [body_mesh.size.x, body_mesh.size.y, body_mesh.size.z] if body_mesh != null else [],
+		"body_color": body_material.albedo_color.to_html(true) if body_material != null else "",
+		"driver_color": driver_material.albedo_color.to_html(true) if driver_material != null else "",
+		"top_speed": player.resolved_top_speed,
+		"acceleration": player.resolved_acceleration,
+		"turn_rate": player.resolved_turn_rate,
+		"drift_turn_rate": player.resolved_drift_turn_rate,
+		"drift_min_speed": player.resolved_drift_min_speed,
+	})
 
 
 func create_kart(kart_name: String, spawn: Vector3, heading: float, color: Color, ai: bool, character: CharacterStats, vehicle: VehicleStats) -> Kart:

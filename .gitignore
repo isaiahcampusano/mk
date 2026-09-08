@@ -3,4 +3,9 @@
 
 # Local exports and recordings
 builds/
+build/*
+!build/.gdignore
+node_modules/*
+!node_modules/.gdignore
+.artifacts/
 *.avi

@@ -3,12 +3,18 @@ extends Control
 var selected_index := 0
 var cards: Array[PanelContainer] = []
 var selection_label: Label
+var confirm_button: Button
 
 
 func _ready() -> void:
 	selected_index = RaceConfig.player_vehicle_index
 	build_screen()
 	update_selection()
+	RaceConfig.report_web_smoke("vehicle_select", {
+		"catalog_valid": RaceConfig.is_catalog_valid(),
+		"vehicle_count": RaceConfig.vehicles.size(),
+		"card_count": cards.size(),
+	})
 
 
 func build_screen() -> void:
@@ -29,6 +35,8 @@ func build_screen() -> void:
 	content.add_child(make_label("MK CIRCUIT  /  KART WORKSHOP", 16, Color("#ff72c6")))
 	content.add_child(make_label("Choose your kart body", 42, Color.WHITE))
 	content.add_child(make_label("Kart bodies multiply your driver's strengths and tradeoffs.", 18, Color("#c2b7d3")))
+	if not RaceConfig.is_catalog_valid():
+		content.add_child(make_content_error())
 
 	var grid := GridContainer.new()
 	grid.columns = 4
@@ -36,11 +44,12 @@ func build_screen() -> void:
 	grid.add_theme_constant_override("h_separation", 14)
 	content.add_child(grid)
 
-	for index in RaceConfig.vehicles.size():
-		var vehicle := RaceConfig.vehicles[index]
-		var card := make_card(vehicle, index)
-		grid.add_child(card)
-		cards.append(card)
+	if RaceConfig.is_catalog_valid():
+		for index in RaceConfig.vehicles.size():
+			var vehicle := RaceConfig.vehicles[index]
+			var card := make_card(vehicle, index)
+			grid.add_child(card)
+			cards.append(card)
 
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 14)
@@ -54,13 +63,39 @@ func build_screen() -> void:
 	selection_label = make_label("", 20, Color("#ff91d3"))
 	selection_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer.add_child(selection_label)
-	footer.add_child(make_label("ARROWS choose   ENTER race   ESC back", 17, Color("#c2b7d3")))
-	var confirm := Button.new()
-	confirm.text = "START RACE  ›"
-	confirm.custom_minimum_size = Vector2(180, 46)
-	confirm.focus_mode = Control.FOCUS_NONE
-	confirm.pressed.connect(confirm_selection)
-	footer.add_child(confirm)
+	var hint_text := "ARROWS choose   ENTER race   ESC back" if RaceConfig.is_catalog_valid() else "ESC back"
+	footer.add_child(make_label(hint_text, 17, Color("#c2b7d3")))
+	confirm_button = Button.new()
+	confirm_button.text = "START RACE  ›"
+	confirm_button.custom_minimum_size = Vector2(180, 46)
+	confirm_button.focus_mode = Control.FOCUS_NONE
+	confirm_button.disabled = not RaceConfig.is_catalog_valid()
+	confirm_button.pressed.connect(confirm_selection)
+	footer.add_child(confirm_button)
+
+
+func make_content_error() -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color("#321c29")
+	style.border_color = Color("#ff6b7a")
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(12)
+	style.content_margin_left = 20
+	style.content_margin_right = 20
+	style.content_margin_top = 20
+	style.content_margin_bottom = 20
+	panel.add_theme_stylebox_override("panel", style)
+	var message := make_label(
+		"CONTENT COULD NOT BE LOADED\n\nDriver and kart data is unavailable. Reload the game.\n\n" + RaceConfig.get_catalog_error(),
+		20,
+		Color("#ffd8dc")
+	)
+	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	panel.add_child(message)
+	return panel
 
 
 func make_card(vehicle: VehicleStats, index: int) -> PanelContainer:
@@ -141,11 +176,17 @@ func make_stat_row(parent: VBoxContainer, stat_name: String, modifier: float) ->
 
 
 func select_index(index: int) -> void:
+	if not RaceConfig.is_catalog_valid() or RaceConfig.vehicles.is_empty():
+		return
 	selected_index = wrapi(index, 0, RaceConfig.vehicles.size())
 	update_selection()
 
 
 func update_selection() -> void:
+	if not RaceConfig.is_catalog_valid() or RaceConfig.vehicles.is_empty():
+		if selection_label:
+			selection_label.text = "CONTENT ERROR"
+		return
 	for index in cards.size():
 		cards[index].add_theme_stylebox_override("panel", card_style(index == selected_index))
 	if selection_label:
@@ -174,17 +215,24 @@ func make_label(text: String, size: int, color: Color) -> Label:
 
 
 func confirm_selection() -> void:
+	if not RaceConfig.is_catalog_valid():
+		return
 	RaceConfig.select_player_vehicle(selected_index)
 	RaceConfig.assign_ai_loadout()
 	get_tree().change_scene_to_file("res://main.tscn")
 
 
 func go_back() -> void:
-	RaceConfig.select_player_vehicle(selected_index)
+	if RaceConfig.is_catalog_valid():
+		RaceConfig.select_player_vehicle(selected_index)
 	get_tree().change_scene_to_file("res://CharacterSelect.tscn")
 
 
 func _input(event: InputEvent) -> void:
+	if not RaceConfig.is_catalog_valid():
+		if event.is_action_pressed("ui_cancel"):
+			go_back()
+		return
 	if event.is_action_pressed("ui_left"):
 		select_index(selected_index - 1)
 	elif event.is_action_pressed("ui_right"):
