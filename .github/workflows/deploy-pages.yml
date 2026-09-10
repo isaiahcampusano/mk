@@ -17,6 +17,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
@@ -33,21 +34,30 @@ jobs:
         run: godot --headless --editor --path . --quit
 
       - name: Run Godot tests
+        timeout-minutes: 15
         run: |
           run_test() {
+            expected="$1"
+            shift
             set +e
-            output=$(godot "$@" 2>&1)
+            output=$(timeout --kill-after=10s 240s godot "$@" 2>&1)
             status=$?
             set -e
             echo "$output"
             if [ "$status" -ne 0 ] || echo "$output" | grep -Eq 'SCRIPT ERROR|^ERROR:'; then
               return 1
             fi
+            if ! echo "$output" | grep -Fq "$expected"; then
+              echo "Missing test completion marker: $expected"
+              return 1
+            fi
           }
-          run_test --headless --path . tests/TestRaceConfig.tscn
-          run_test --headless --path . tests/TestKartMechanics.tscn
-          run_test --headless --path . tests/TestMainConfiguration.tscn
-          run_test --headless --path . --script tests/test_race_manager.gd
+          run_test 'RaceConfig tests passed' --headless --path . tests/TestRaceConfig.tscn
+          run_test 'Kart mechanics tests passed' --headless --path . tests/TestKartMechanics.tscn
+          run_test 'Main configuration tests passed' --headless --path . tests/TestMainConfiguration.tscn
+          run_test 'RaceManager tests passed' --headless --path . --script tests/test_race_manager.gd
+          run_test 'Circuit geometry, grid, item, recovery, and restart tests passed' --headless --path . tests/TestCircuitGeometry.tscn
+          run_test 'Circuit integration tests passed' --headless --path . --fixed-fps 60 tests/TestCircuitIntegration.tscn
 
       - name: Export game for the web
         run: |

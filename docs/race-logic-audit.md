@@ -31,3 +31,47 @@ and presentation, and delegates all race mutations to the manager. Progress is
 compared as `(lap, segment, projected distance within segment)`, with racer spawn
 order as a deterministic exact-tie break. A debug-build assertion reports any
 frame where projected progress decreases while velocity is forward.
+
+## Technical circuit and starting grid
+
+The circuit now has 59 checkpoints across 7,825.19 units. The shortest segment is
+127.79 units, above the 105.8-unit checkpoint rearm threshold. The closing segment
+is included in validation, and the first point is not repeated at the end.
+Mitered road offsets maintain 200-unit segment width. Startup validation checks
+flatness, length, segment spacing, road/outer-wall boundary intersections, and
+folded shoulder/road triangles. Walls retain their physical collision shapes.
+
+The start tangent is shared by spawn placement and the finish-line paint. Rear-row
+centers are 115 units behind the line; front-row centers are 55 units behind it.
+Columns are at −50, 0, and +50 units. Racer-array order remains PLAYER, COM 1–5,
+so the front row initially ranks first through third and the player ranks fourth.
+
+Before the first forward start crossing, `progress_tuple()` uses signed distance
+along the start straight, preserving the separation between grid rows. Stable
+array order still breaks same-row ties. `has_crossed_start` is reset at race start
+and latched by forward movement past the start within the checkpoint corridor.
+It cannot be cleared by reversing. The first required checkpoint remains 1;
+launch therefore awards no lap. Existing checkpoint rearming, three-lap completion,
+and finish-order rules remain in force.
+
+## Items, AI, and recovery
+
+Ten explicit station waypoint indices replace the old placement list. Each station
+creates three boxes at offsets −40, 0, and +40; `station_id` controls item alternation
+independently of `track_index`. The latter still identifies placement and animation
+phase. Availability and the six-second cooldown belong to each individual box.
+The existing one-held-item rule and 35-unit pickup distance remain unchanged.
+
+AI targets the next checkpoint owned by RaceManager, instead of advancing a separate
+waypoint whenever it gets close. It examines the next three corners, estimates a
+handling-dependent corner speed, and begins braking before entering the checkpoint
+radius. Heading error also caps speed during sharp corrections. Recovery resets
+the AI waypoint to the next required checkpoint; it grants no checkpoint or lap.
+
+The smoke-test report adds item count, grid dimensions, track length, initial player
+position, race state, and an incrementing race generation. It is emitted after
+each restart so browser tests can distinguish a fresh countdown from stale data.
+
+See [verification results](circuit-verification.md) for the test scenarios and
+measured limits. Elevation, additional items, AI overtaking, and item-lane strategy
+are outside this change.

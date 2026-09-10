@@ -7,7 +7,7 @@ func _ready() -> void:
 	RaceConfig.select_player_character(RaceConfig.find_character(&"rook_ember"))
 	RaceConfig.select_player_vehicle(RaceConfig.find_vehicle(&"slidewinder"))
 	var race = MainSceneScript.new()
-	assert(race.track_points.size() == 24, "The expanded track must contain 24 points")
+	assert(race.validate_track_geometry().is_empty(), "The technical circuit must have valid geometry")
 	for index in race.track_points.size():
 		var next: int = (index + 1) % race.track_points.size()
 		var segment_length: float = race.track_points[index].distance_to(race.track_points[next])
@@ -49,7 +49,7 @@ func _ready() -> void:
 		if kart.is_ai:
 			ai_count += 1
 	assert(ai_count == 5, "A race must start with five AI karts")
-	assert(race.item_boxes.size() == 10, "A race must start with ten item boxes")
+	assert(race.item_boxes.size() == 30, "A race must start with thirty item boxes")
 
 	race.free()
 	print("Main configuration tests passed")

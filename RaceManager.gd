@@ -45,7 +45,8 @@ func start_race(new_racers: Array) -> void:
 		racer.checkpoint_armed = true
 		racer.has_finished = false
 		racer.finish_order = 0
-		racer.debug_last_progress = 0.0
+		racer.has_crossed_start = start_projection(racer.position) >= 0.0
+		racer.debug_last_progress = progress_distance(racer)
 	update_positions()
 
 
@@ -63,6 +64,11 @@ func advance(delta: float) -> void:
 func register_checkpoint(racer) -> CheckpointResult:
 	if state != State.RACING or racer.has_finished or track_points.is_empty():
 		return CheckpointResult.NONE
+	if not racer.has_crossed_start:
+		var tangent := (track_points[1] - track_points[0]).normalized()
+		var lateral: float = (racer.position - track_points[0]).cross(tangent).length()
+		if start_projection(racer.position) >= 0.0 and lateral <= checkpoint_radius and racer.velocity.dot(tangent) > 5.0:
+			racer.has_crossed_start = true
 	var index: int = racer.next_checkpoint
 	var point := track_points[index]
 	var distance: float = racer.position.distance_to(point)
@@ -120,6 +126,8 @@ func update_positions() -> void:
 
 
 func progress_tuple(racer) -> Array:
+	if not racer.has_crossed_start and racer.laps_completed == 0 and racer.last_checkpoint == 0:
+		return [0, 0, minf(0.0, start_projection(racer.position)) / track_points[0].distance_to(track_points[1])]
 	var segment_index: int = clampi(racer.last_checkpoint, 0, track_points.size() - 1)
 	var next_index := (segment_index + 1) % track_points.size()
 	var start := track_points[segment_index]
@@ -169,3 +177,7 @@ func build_distance_table() -> void:
 	for index in track_points.size():
 		cumulative_track_distance.append(track_length)
 		track_length += track_points[index].distance_to(track_points[(index + 1) % track_points.size()])
+
+
+func start_projection(position: Vector3) -> float:
+	return (position - track_points[0]).dot((track_points[1] - track_points[0]).normalized())

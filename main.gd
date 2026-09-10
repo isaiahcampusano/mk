@@ -12,21 +12,75 @@ const CAMERA_LOOK_AHEAD := 74.0
 const CAMERA_POSITION_SMOOTH := 7.0
 const CAMERA_ROTATION_SMOOTH := 9.0
 const CAMERA_COLLISION_MARGIN := 8.0
+const ITEM_LANES := [-40.0, 0.0, 40.0]
+# Stable station order controls item alternation independently of waypoint indices.
+# Start straight, first exit, esses exit, back straight, second exit, chicane exit,
+# outer straight (two), outer climb, final straight.
+const ITEM_STATIONS := [3, 10, 14, 17, 23, 30, 36, 41, 49, 55]
+const GRID_LANES := [-50.0, 0.0, 50.0]
 const POSITION_LABEL_HOME := Vector2(18.0, 46.0)
 
+# Clockwise start hairpin, linked esses, counterclockwise hairpin, chicane, outer return.
 var track_points := PackedVector3Array([
-	Vector3(210, 0, 345), Vector3(245, 0, 225),
-	Vector3(345, 0, 145), Vector3(465, 0, 120),
-	Vector3(590, 0, 110), Vector3(715, 0, 125),
-	Vector3(830, 0, 175), Vector3(955, 0, 190),
-	Vector3(1075, 0, 190), Vector3(1195, 0, 235),
-	Vector3(1275, 0, 330), Vector3(1250, 0, 445),
-	Vector3(1170, 0, 535), Vector3(1055, 0, 585),
-	Vector3(930, 0, 590), Vector3(810, 0, 565),
-	Vector3(690, 0, 610), Vector3(575, 0, 660),
-	Vector3(450, 0, 690), Vector3(325, 0, 695),
-	Vector3(205, 0, 675), Vector3(100, 0, 600),
-	Vector3(60, 0, 480), Vector3(85, 0, 360),
+	Vector3(0.0, 0, 0.0), # 0
+	Vector3(133.69, 0, 0.0), # 1
+	Vector3(267.38, 0, 0.0), # 2
+	Vector3(401.07, 0, 0.0), # 3
+	Vector3(534.759, 0, 0.0), # 4
+	Vector3(668.449, 0, 0.0), # 5
+	Vector3(801.13, 0, 9.076), # 6
+	Vector3(897.657, 0, 96.31), # 7
+	Vector3(901.635, 0, 226.353), # 8
+	Vector3(810.62, 0, 319.324), # 9
+	Vector3(679.322, 0, 340.517), # 10
+	Vector3(550.202, 0, 373.264), # 11
+	Vector3(419.946, 0, 347.548), # 12
+	Vector3(289.076, 0, 340.237), # 13
+	Vector3(180.405, 0, 417.246), # 14
+	Vector3(49.15, 0, 431.6), # 15
+	Vector3(-84.54, 0, 431.6), # 16
+	Vector3(-218.23, 0, 431.6), # 17
+	Vector3(-351.92, 0, 431.6), # 18
+	Vector3(-477.28, 0, 468.041), # 19
+	Vector3(-538.823, 0, 582.671), # 20
+	Vector3(-498.808, 0, 706.468), # 21
+	Vector3(-381.816, 0, 763.388), # 22
+	Vector3(-248.13, 0, 763.6), # 23
+	Vector3(-114.44, 0, 763.6), # 24
+	Vector3(19.25, 0, 763.6), # 25
+	Vector3(152.774, 0, 766.247), # 26
+	Vector3(275.052, 0, 819.184), # 27
+	Vector3(402.12, 0, 805.616), # 28
+	Vector3(513.737, 0, 733.692), # 29
+	Vector3(642.384, 0, 757.703), # 30
+	Vector3(729.99, 0, 855.624), # 31
+	Vector3(741.219, 0, 986.534), # 32
+	Vector3(671.567, 0, 1097.943), # 33
+	Vector3(548.964, 0, 1145.182), # 34
+	Vector3(415.277, 0, 1145.4), # 35
+	Vector3(281.587, 0, 1145.4), # 36
+	Vector3(147.898, 0, 1145.4), # 37
+	Vector3(14.208, 0, 1145.4), # 38
+	Vector3(-119.482, 0, 1145.4), # 39
+	Vector3(-253.172, 0, 1145.4), # 40
+	Vector3(-386.862, 0, 1145.4), # 41
+	Vector3(-520.552, 0, 1145.4), # 42
+	Vector3(-654.241, 0, 1145.4), # 43
+	Vector3(-785.78, 0, 1129.239), # 44
+	Vector3(-884.61, 0, 1042.662), # 45
+	Vector3(-913.0, 0, 914.028), # 46
+	Vector3(-913.0, 0, 780.339), # 47
+	Vector3(-913.0, 0, 646.649), # 48
+	Vector3(-913.0, 0, 512.959), # 49
+	Vector3(-913.0, 0, 379.269), # 50
+	Vector3(-913.0, 0, 245.579), # 51
+	Vector3(-891.358, 0, 115.237), # 52
+	Vector3(-798.683, 0, 22.101), # 53
+	Vector3(-668.449, 0, 0.0), # 54
+	Vector3(-534.759, 0, 0.0), # 55
+	Vector3(-401.07, 0, 0.0), # 56
+	Vector3(-267.38, 0, 0.0), # 57
+	Vector3(-133.69, 0, 0.0), # 58
 ])
 
 var world_rect: Rect2
@@ -64,6 +118,7 @@ var position_change_tween: Tween
 var chase_camera: Camera3D
 var debug_camera: Camera3D
 var debug_camera_enabled := false
+var race_generation := 0
 var camera_look_point := Vector3.ZERO
 var camera_forward_cache := Vector3.FORWARD
 
@@ -80,7 +135,12 @@ func _ready() -> void:
 			"error": RaceConfig.get_catalog_error(),
 		})
 		return
-	world_rect = compute_world_rect(150.0)
+	var geometry_errors := validate_track_geometry()
+	if not geometry_errors.is_empty():
+		push_error("Invalid circuit: " + "; ".join(geometry_errors))
+		set_physics_process(false)
+		return
+	world_rect = compute_world_rect(80.0)
 	race_manager.configure(track_points, TOTAL_LAPS, CHECKPOINT_RADIUS)
 	race_manager.race_ended.connect(finish_race)
 	build_world_geometry()
@@ -88,7 +148,6 @@ func _ready() -> void:
 	build_cameras()
 	build_ui()
 	start_race()
-	report_web_smoke()
 
 
 func build_content_error_ui() -> void:
@@ -119,7 +178,7 @@ func compute_world_rect(margin: float) -> Rect2:
 	var max_x := -INF
 	var min_z := INF
 	var max_z := -INF
-	for point in track_points:
+	for point in get_offset_loop(-WALL_OFFSET - WALL_THICKNESS * 0.5) + get_offset_loop(WALL_OFFSET + WALL_THICKNESS * 0.5):
 		min_x = minf(min_x, point.x)
 		max_x = maxf(max_x, point.x)
 		min_z = minf(min_z, point.z)
@@ -131,6 +190,7 @@ func start_race() -> void:
 	if not RaceConfig.is_catalog_valid():
 		push_error("Race cannot start: " + RaceConfig.get_catalog_error())
 		return
+	race_generation += 1
 	for kart in karts:
 		kart.queue_free()
 	for box in item_boxes:
@@ -142,10 +202,8 @@ func start_race() -> void:
 	item_boxes.clear()
 	bananas.clear()
 
-	var start_tangent := (track_points[1] - track_points[0]).normalized()
+	var start_tangent := track_tangent(0)
 	var start_heading := heading_from_direction(start_tangent)
-	var normal := planar_normal(start_tangent)
-	var offsets := [-75, -45, -15, 15, 45, 75]
 	var fallback_colors := [
 		Color("#ef3f47"), Color("#3e70ff"), Color("#52e84a"),
 		Color("#f7cf3c"), Color("#ff7a3d"), Color("#c46cff"),
@@ -161,7 +219,7 @@ func start_race() -> void:
 			var ai_offset := index - 1
 			character = RaceConfig.characters[(RaceConfig.ai_character_index + ai_offset) % RaceConfig.characters.size()]
 			vehicle = RaceConfig.vehicles[(RaceConfig.ai_vehicle_index + ai_offset) % RaceConfig.vehicles.size()]
-		var spawn_pos: Vector3 = track_points[0] - start_tangent * 18.0 + normal * offsets[index]
+		var spawn_pos := grid_position(index)
 		var kart := create_kart(
 			"PLAYER" if is_player else "COM %d" % index,
 			spawn_pos,
@@ -174,12 +232,15 @@ func start_race() -> void:
 		if is_player:
 			player = kart
 
-	for index in [3, 4, 7, 8, 11, 12, 15, 17, 18, 20]:
-		var box := ItemBox.new()
-		box.position = track_points[index]
-		box.track_index = index
-		add_child(box)
-		item_boxes.append(box)
+	for station_id in ITEM_STATIONS.size():
+		var index: int = ITEM_STATIONS[station_id]
+		for lane in ITEM_LANES:
+			var box := ItemBox.new()
+			box.position = track_position(index, lane)
+			box.track_index = index
+			box.station_id = station_id
+			add_child(box)
+			item_boxes.append(box)
 
 	race_manager.start_race(karts)
 	result_panel.visible = false
@@ -192,6 +253,7 @@ func start_race() -> void:
 	reset_hud_feedback()
 	update_item_slot("")
 	reset_chase_camera()
+	report_web_smoke()
 
 
 func report_web_smoke() -> void:
@@ -209,6 +271,13 @@ func report_web_smoke() -> void:
 	RaceConfig.report_web_smoke("race", {
 		"catalog_valid": RaceConfig.is_catalog_valid(),
 		"kart_count": karts.size(),
+		"item_count": item_boxes.size(),
+		"grid_rows": 2,
+		"grid_columns": 3,
+		"track_length": race_manager.track_length,
+		"race_state": race_manager.state,
+		"race_generation": race_generation,
+		"player_position": [player.position.x, player.position.y, player.position.z],
 		"character_id": String(player.character_stats.character_id),
 		"vehicle_id": String(player.vehicle_stats.vehicle_id),
 		"model_profile": player.vehicle_stats.model_profile,
@@ -246,18 +315,19 @@ func build_world_geometry() -> void:
 	build_track_ribbons()
 	build_lane_markings()
 	build_finish_line()
+	build_grid_markings()
 	build_checkpoint_markers()
 
 
 func build_ground() -> void:
 	var ground_material := make_unshaded_material(Color("#4b9636"))
 	var ground_mesh := BoxMesh.new()
-	ground_mesh.size = Vector3(5000.0, 1.0, 4000.0)
+	ground_mesh.size = Vector3(world_rect.size.x, 1.0, world_rect.size.y)
 	ground_mesh.material = ground_material
 	var ground_visual := MeshInstance3D.new()
 	ground_visual.name = "GrassGround"
 	ground_visual.mesh = ground_mesh
-	ground_visual.position = Vector3(675.0, -0.55, 400.0)
+	ground_visual.position = Vector3(world_rect.get_center().x, -0.55, world_rect.get_center().y)
 	add_child(ground_visual)
 
 	var floor_body := StaticBody3D.new()
@@ -266,9 +336,9 @@ func build_ground() -> void:
 	floor_body.collision_mask = 0
 	var floor_collision := CollisionShape3D.new()
 	var floor_shape := BoxShape3D.new()
-	floor_shape.size = Vector3(1900.0, 1.0, 1200.0)
+	floor_shape.size = ground_mesh.size
 	floor_collision.shape = floor_shape
-	floor_collision.position = Vector3(675.0, -0.55, 400.0)
+	floor_collision.position = Vector3(world_rect.get_center().x, -0.55, world_rect.get_center().y)
 	floor_body.add_child(floor_collision)
 	add_child(floor_body)
 
@@ -322,14 +392,24 @@ func build_lane_markings() -> void:
 func build_finish_line() -> void:
 	var white := make_unshaded_material(Color.WHITE)
 	var black := make_unshaded_material(Color("#15171c"))
-	var finish_tangent := (track_points[1] - track_points[-1]).normalized()
-	var finish_normal := planar_normal(finish_tangent)
-	var heading := heading_from_direction(finish_tangent)
-	for row in 6:
-		for column in 2:
-			var center := track_points[0] + finish_normal * (row - 2.5) * 20.0 + finish_tangent * (column - 0.5) * 15.0 + Vector3.UP * 0.24
-			var material := white if (row + column) % 2 == 0 else black
-			add_box_visual("FinishTile", Vector3(16.0, 0.14, 20.0), material, center, heading)
+	var tangent := track_tangent(0)
+	var heading := heading_from_direction(tangent)
+	for lane in 10:
+		for row in 2:
+			var center := track_position(0, (lane - 4.5) * 20.0) + tangent * (row - 0.5) * 15.0 + Vector3.UP * 0.24
+			add_box_visual("FinishTile", Vector3(20.0, 0.14, 15.0), white if (lane + row) % 2 == 0 else black, center, heading)
+
+
+func build_grid_markings() -> void:
+	var paint := make_unshaded_material(Color("#fff0bf"))
+	var tangent := track_tangent(0)
+	var normal := planar_normal(tangent)
+	var heading := heading_from_direction(tangent)
+	for index in 6:
+		var center := grid_position(index) + Vector3.UP * 0.22
+		for side in [-1.0, 1.0]:
+			add_box_visual("GridSide", Vector3(2, 0.12, 44), paint, center + normal * side * 19.0, heading)
+		add_box_visual("GridFront", Vector3(40, 0.12, 2), paint, center + tangent * 22.0, heading)
 
 
 func build_checkpoint_markers() -> void:
@@ -389,14 +469,73 @@ func build_walls() -> void:
 			wall_body.add_child(wall_visual)
 
 
+func track_tangent(index: int) -> Vector3:
+	var count := track_points.size()
+	var current := track_points[posmod(index, count)]
+	var incoming := (current - track_points[posmod(index - 1, count)]).normalized()
+	var outgoing := (track_points[posmod(index + 1, count)] - current).normalized()
+	return (incoming + outgoing).normalized()
+
+
+func track_position(index: int, lateral: float = 0.0) -> Vector3:
+	return track_points[posmod(index, track_points.size())] + planar_normal(track_tangent(index)) * lateral
+
+
+func grid_position(index: int) -> Vector3:
+	var behind := 115.0 if index < 3 else 55.0
+	return track_position(0, GRID_LANES[index % 3]) - track_tangent(0) * behind
+
+
 func get_offset_loop(distance: float) -> PackedVector3Array:
 	var result := PackedVector3Array()
 	for i in track_points.size():
-		var previous := track_points[(i - 1 + track_points.size()) % track_points.size()]
-		var following := track_points[(i + 1) % track_points.size()]
-		var tangent := (following - previous).normalized()
-		result.append(track_points[i] + planar_normal(tangent) * distance)
+		var outgoing := (track_points[(i + 1) % track_points.size()] - track_points[i]).normalized()
+		var normal := planar_normal(track_tangent(i))
+		# Miter intersections preserve the full road width along each segment.
+		var denominator := maxf(0.01, normal.dot(planar_normal(outgoing)))
+		result.append(track_points[i] + normal * distance / denominator)
 	return result
+
+
+func validate_track_geometry() -> PackedStringArray:
+	var errors := PackedStringArray()
+	var count := track_points.size()
+	if count < 3:
+		errors.append("At least three distinct track points are required")
+		return errors
+	var length := 0.0
+	for i in count:
+		var segment := track_points[i].distance_to(track_points[(i + 1) % count])
+		length += segment
+		if segment < 120.0 or not is_zero_approx(track_points[i].y):
+			errors.append("Invalid flat checkpoint segment %d" % i)
+	if length < 7000.0 or length > 8000.0:
+		errors.append("Circuit length must be 7000–8000 units")
+	var loops: Array[PackedVector3Array] = []
+	for offset in [-WALL_OFFSET - WALL_THICKNESS * 0.5, -ROAD_HALF_WIDTH, ROAD_HALF_WIDTH, WALL_OFFSET + WALL_THICKNESS * 0.5]:
+		loops.append(get_offset_loop(offset))
+	for a in loops.size():
+		for b in range(a, loops.size()):
+			for i in count:
+				for j in count:
+					if a == b and (j <= i or j == (i + 1) % count or i == (j + 1) % count):
+						continue
+					var p := loops[a][i]
+					var q := loops[a][(i + 1) % count]
+					var r := loops[b][j]
+					var t := loops[b][(j + 1) % count]
+					if Geometry2D.segment_intersects_segment(Vector2(p.x, p.z), Vector2(q.x, q.z), Vector2(r.x, r.z), Vector2(t.x, t.z)) != null:
+						errors.append("Intersecting boundaries %d/%d at %d/%d" % [a, b, i, j])
+	for band in range(loops.size() - 1):
+		for i in count:
+			var next := (i + 1) % count
+			var a := loops[band][i]
+			var b := loops[band][next]
+			var c := loops[band + 1][next]
+			var d := loops[band + 1][i]
+			if (b - a).cross(c - a).y >= -0.01 or (c - a).cross(d - a).y >= -0.01:
+				errors.append("Folded track ribbon at %d" % i)
+	return errors
 
 
 func planar_normal(tangent: Vector3) -> Vector3:
@@ -447,13 +586,25 @@ func build_cameras() -> void:
 
 	debug_camera = Camera3D.new()
 	debug_camera.name = "DebugTopDownCamera"
-	debug_camera.position = Vector3(700.0, 1100.0, 410.0)
+	debug_camera.position = Vector3.ZERO
 	debug_camera.rotation.x = -PI * 0.5
 	debug_camera.fov = 68.0
 	debug_camera.near = 1.0
 	debug_camera.far = 3000.0
 	debug_camera.current = false
 	add_child(debug_camera)
+	fit_debug_camera()
+	get_viewport().size_changed.connect(fit_debug_camera)
+
+
+func fit_debug_camera() -> void:
+	var viewport_size := get_viewport().get_visible_rect().size
+	var aspect := viewport_size.x / maxf(1.0, viewport_size.y)
+	var half_height := maxf(world_rect.size.y * 0.5, world_rect.size.x * 0.5 / aspect)
+	var altitude := half_height * 1.08 / tan(deg_to_rad(debug_camera.fov * 0.5))
+	var center := world_rect.get_center()
+	debug_camera.position = Vector3(center.x, altitude, center.y)
+	debug_camera.far = altitude + world_rect.size.length()
 
 
 func reset_chase_camera() -> void:
@@ -709,7 +860,7 @@ func process_race(delta: float) -> void:
 			continue
 		for kart in karts:
 			if kart.held_item == "" and kart.position.distance_to(box.position) < 35.0:
-				kart.held_item = "MUSHROOM" if (box.track_index + kart.laps_completed) % 2 == 0 else "BANANA"
+				kart.held_item = "MUSHROOM" if (box.station_id + kart.laps_completed) % 2 == 0 else "BANANA"
 				box.collect()
 				if kart == player:
 					flash("ITEM: " + kart.held_item, 0.8)
@@ -795,6 +946,7 @@ func recover_kart(kart: Kart) -> void:
 	var tangent := (track_points[(index + 1) % track_points.size()] - track_points[index]).normalized()
 	kart.position = track_points[index] + tangent * 28.0
 	kart.position.y = 0.0
+	kart.ai_waypoint = kart.next_checkpoint
 	kart.rotation.y = heading_from_direction(tangent)
 	kart.velocity = Vector3.ZERO
 	kart.current_speed = 0.0
@@ -1031,6 +1183,7 @@ class Kart extends CharacterBody3D:
 	var next_checkpoint := 1
 	var last_checkpoint := 0
 	var race_position := 1
+	var has_crossed_start := false
 	var checkpoint_armed := true
 	var has_finished := false
 	var finish_order := 0
@@ -1189,15 +1342,17 @@ class Kart extends CharacterBody3D:
 		var throttle := 0.0
 		var steering := 0.0
 		if is_ai:
+			# RaceManager owns advancement: never abandon an unregistered checkpoint.
+			ai_waypoint = next_checkpoint
 			var target := track[ai_waypoint]
-			if position.distance_to(target) < 70.0:
-				ai_waypoint = (ai_waypoint + 1) % track.size()
-				target = track[ai_waypoint]
 			var direction := (target - position).normalized()
 			var desired := atan2(direction.x, direction.z)
 			var difference := wrapf(desired - rotation.y, -PI, PI)
-			steering = clamp(-difference * 2.2, -1.0, 1.0)
-			throttle = 0.72 if abs(difference) > 0.65 else 1.0
+			steering = clampf(-difference * 2.2, -1.0, 1.0)
+			var target_speed := ai_corner_speed()
+			if absf(difference) > 0.65:
+				target_speed = minf(target_speed, resolved_top_speed * 0.45)
+			throttle = -1.0 if current_speed > target_speed + 8.0 else target_speed / resolved_top_speed
 			if held_item != "" and (held_item == "MUSHROOM" or randf() < 0.006):
 				wants_to_use_item = true
 		else:
@@ -1249,6 +1404,24 @@ class Kart extends CharacterBody3D:
 			velocity = forward * current_speed
 		move_flat()
 		current_speed = velocity.dot(forward_vector())
+
+	func ai_corner_speed() -> float:
+		var target_speed := resolved_top_speed
+		var distance_ahead := position.distance_to(track[next_checkpoint])
+		for offset in 3:
+			var i := (next_checkpoint + offset) % track.size()
+			var incoming := track[i] - track[posmod(i - 1, track.size())]
+			var outgoing := track[(i + 1) % track.size()] - track[i]
+			var angle := incoming.angle_to(outgoing)
+			if angle > 0.08:
+				var radius := minf(incoming.length(), outgoing.length()) / (2.0 * sin(angle * 0.5))
+				var corner_speed := clampf(radius * resolved_turn_rate * 0.62, 90.0, resolved_top_speed)
+				# Brake before the checkpoint's acceptance radius, not after entering the turn.
+				var braking_distance := maxf(0.0, distance_ahead - 110.0)
+				target_speed = minf(target_speed, sqrt(corner_speed * corner_speed + 2.0 * 300.0 * braking_distance))
+			distance_ahead += outgoing.length()
+		return target_speed
+
 
 	func start_hop() -> void:
 		is_hopping = true
@@ -1315,6 +1488,7 @@ class ItemBox extends Node3D:
 
 	var available := true
 	var cooldown := 0.0
+	var station_id := 0
 	var track_index := 0
 	var animation_time := 0.0
 	var animation_phase := 0.0

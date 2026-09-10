@@ -4,13 +4,13 @@
 
 
 A 3D chase-cam racing game built in Godot 4. The track is inspired by Mario
-Circuit 3, with flat-shaded low-poly visuals and two-kart arcade racing.
+Circuit 3, with flat-shaded low-poly visuals and six-kart arcade racing.
 
 **[Play MK Circuit in your browser](https://isaiahcampusano.github.io/mk/)**
 
 ## Play
 
-1. Install Godot 4.3 or newer.
+1. Install Godot 4.6.3 (the version used for testing and web exports).
 2. Import this folder from the Godot Project Manager.
 3. Press **F6** or **F5** to run.
 
@@ -43,17 +43,65 @@ the included GitHub Actions workflow.
 - A persistent driver → kart → countdown pre-race flow
 - Resolved loadout stats that scale speed, acceleration, handling, and drifting
 - Responsive acceleration, reverse, speed-scaled steering, hop, drift, and mini-turbo
-- 16 ordered checkpoints; skipped or backward checkpoints never count
+- 59 ordered checkpoints; skipped or backward checkpoints never count
 - Countdown → Racing → Finished state machine and three-lap races
-- A waypoint-following rival subject to the same checkpoints and walls
-- Respawning item boxes, banana spin-outs, and mushroom speed boosts
+- Five rivals that anticipate corners and obey the same checkpoints and walls
+- Ten three-lane item stations with independent six-second respawns, banana spin-outs, and mushroom speed boosts
 - Out-of-bounds recovery at the last valid checkpoint
 - Live lap, position, held-item, timer, and replay UI
 - Driver/kart identification in the race HUD and final standings
 
-The entire race remains deliberately code-driven in `main.gd`, which makes the
-3D geometry, camera, gameplay rules, and kart handling easy to inspect and tune.
-2d snes mk mario circuit race 
+## Technical circuit
 
-wiki: https://www.mariowiki.com/Mario_Circuit_3
+The flat circuit is approximately **7,825 world units** long, compared with 2,995
+in the previous layout. A long start straight leads into two opposing hairpins,
+linked S-curves, a chicane, and an outer return straight with sweeping corners.
+The road remains 200 units wide. Ground, recovery bounds, and the F3 overview
+camera adapt to the generated road and walls.
+
+Six karts start in two rows of three, with 60 units between rows. The player starts
+on the rear left in fourth place; COM 3–5 occupy the front row. Painted slots and
+a full-width checkered line show the grid. Crossing the line at launch does not
+award a lap.
+
+Each of the ten item stations has left, center, and right boxes at lateral offsets
+of −40, 0, and +40 units. Each box respawns independently after six seconds.
+Station identity and lap number determine mushroom/banana alternation; holding an
+item prevents collecting another box.
+
+World geometry, cameras, items, and kart handling remain code-driven in `main.gd`.
+`RaceManager.gd` owns countdowns, checkpoints, ranking, laps, and finish order.
+See [race-logic notes](docs/race-logic-audit.md) and the
+[verification report](docs/circuit-verification.md) for implementation details.
+
+## Verify locally
+
+With Godot 4.6.3 on your PATH, import the project and run:
+
+```sh
+godot --headless --editor --path . --quit
+godot --headless --path . tests/TestRaceConfig.tscn
+godot --headless --path . tests/TestKartMechanics.tscn
+godot --headless --path . tests/TestMainConfiguration.tscn
+godot --headless --path . --script tests/test_race_manager.gd
+godot --headless --path . tests/TestCircuitGeometry.tscn
+godot --headless --path . --fixed-fps 60 tests/TestCircuitIntegration.tscn
+```
+
+The integration suite runs three seeded AI races across all 16 driver/kart
+combinations, then two races through the player-input branch using the fastest
+and lowest-handling loadouts. Both extremes currently select Bramble Knox / Vortex
+GT. Every racer must complete three laps without recovery or prolonged stalls.
+
+For browser verification, install the matching Godot web export templates, export
+the Web preset to `build/web/index.html`, then run `npm ci`,
+`npx playwright install chromium`, and `npm run test:web`. The smoke test checks
+selection, loadout preservation, the grid, item counts, and restart, and saves
+wide/narrow overview and starting-grid screenshots under `.artifacts/test-results`.
+
+CI limits each Godot suite to four minutes, rejects script errors even if Godot
+exits successfully, and requires an explicit completion message. Deployment still
+occurs only through the existing GitHub Pages workflow after successful checks.
+
+Inspiration: [Mario Circuit 3](https://www.mariowiki.com/Mario_Circuit_3)
 
