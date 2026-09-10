@@ -1,12 +1,12 @@
 # MK Circuit
+**[Play MK Circuit in your browser](https://isaiahcampusano.github.io/mk/)**
 
-<img width="775" height="436" alt="image" src="https://github.com/user-attachments/assets/d49259cb-49d2-43b4-b0c0-8864de817fae" />
-
+<img width="793" height="450" alt="image" src="https://github.com/user-attachments/assets/dec4d2dd-2cb6-4065-a941-f1bb2bd4baba" />
 
 A 3D chase-cam racing game built in Godot 4. The track is inspired by Mario
 Circuit 3, with flat-shaded low-poly visuals and six-kart arcade racing.
 
-**[Play MK Circuit in your browser](https://isaiahcampusano.github.io/mk/)**
+---
 
 ## Play
 
