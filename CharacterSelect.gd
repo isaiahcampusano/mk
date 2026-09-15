@@ -1,5 +1,8 @@
 extends Control
 
+const GRID_COLUMNS := 4
+
+var roster_scroll: ScrollContainer
 var selected_index := 0
 var cards: Array[PanelContainer] = []
 var selection_label: Label
@@ -41,11 +44,16 @@ func build_screen() -> void:
 	if not RaceConfig.is_catalog_valid():
 		content.add_child(make_content_error())
 
+	roster_scroll = ScrollContainer.new()
+	roster_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	roster_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	content.add_child(roster_scroll)
 	var grid := GridContainer.new()
-	grid.columns = 4
+	grid.columns = GRID_COLUMNS
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	grid.add_theme_constant_override("h_separation", 14)
-	content.add_child(grid)
+	roster_scroll.add_child(grid)
 
 	if RaceConfig.is_catalog_valid():
 		for index in RaceConfig.characters.size():
@@ -189,6 +197,8 @@ func update_selection() -> void:
 		return
 	for index in cards.size():
 		cards[index].add_theme_stylebox_override("panel", card_style(index == selected_index))
+	if roster_scroll and not cards.is_empty():
+		roster_scroll.ensure_control_visible.call_deferred(cards[selected_index])
 	if selection_label:
 		selection_label.text = "SELECTED  •  " + RaceConfig.characters[selected_index].character_name
 
@@ -229,9 +239,9 @@ func _input(event: InputEvent) -> void:
 	elif event.is_action_pressed("ui_right"):
 		select_index(selected_index + 1)
 	elif event.is_action_pressed("ui_up"):
-		select_index(selected_index - 2)
+		select_index(selected_index - GRID_COLUMNS)
 	elif event.is_action_pressed("ui_down"):
-		select_index(selected_index + 2)
+		select_index(selected_index + GRID_COLUMNS)
 	elif event.is_action_pressed("ui_accept"):
 		confirm_selection()
 

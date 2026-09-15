@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="CharacterStats" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://data/CharacterStats.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/portraits/walker.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+character_id = &"walker"
+character_name = "Walker"
+portrait = ExtResource("2")
+driver_color = Color(0.74, 0.47, 1, 1)
+weight = 0.5
+base_speed_mod = 1.0
+base_accel_mod = 1.0
+base_handling_mod = 1.0

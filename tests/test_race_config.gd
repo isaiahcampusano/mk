@@ -9,9 +9,9 @@ const MainSceneScript = preload("res://main.gd")
 func _ready() -> void:
 	var config = RaceConfigScript.new()
 	assert(config.is_catalog_valid(), config.get_catalog_error())
-	assert(config.characters.size() == 4, "The driver catalog must contain four entries")
+	assert(config.characters.size() == 8, "The driver catalog must contain eight entries")
 	assert(config.vehicles.size() == 4, "The kart catalog must contain four entries")
-	assert(_character_ids(config) == [&"bramble_knox", &"nova_reed", &"pip_spark", &"rook_ember"])
+	assert(_character_ids(config) == [&"bramble_knox", &"nova_reed", &"pip_spark", &"rook_ember", &"martian", &"bruiser", &"ledge_patroller", &"walker"])
 	assert(_vehicle_ids(config) == [&"comet", &"slidewinder", &"vortex_gt", &"zipbug"])
 
 	var seen_character_ids: Dictionary = {}
@@ -53,9 +53,36 @@ func _ready() -> void:
 	assert(config.ai_character_index == -1 and config.ai_vehicle_index == -1)
 
 	config.free()
+	await _test_expanded_roster_screen()
 	await _test_invalid_catalog_screens()
 	print("RaceConfig tests passed")
 	get_tree().quit()
+
+
+func _test_expanded_roster_screen() -> void:
+	var screen = CharacterSelectScript.new()
+	add_child(screen)
+	screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	await get_tree().process_frame
+	assert(screen.cards.size() == 8)
+	screen.select_index(0)
+	var down := InputEventAction.new()
+	down.action = "ui_down"
+	down.pressed = true
+	screen._input(down)
+	assert(screen.selected_index == 4, "Down must move to the same column in the second row")
+	for index in range(4, 8):
+		screen.select_index(index)
+		RaceConfig.select_player_character(screen.selected_index)
+		assert(RaceConfig.player_character == RaceConfig.characters[index])
+		await get_tree().process_frame
+		await get_tree().process_frame
+		var card_rect: Rect2 = screen.cards[index].get_global_rect()
+		var scroll_rect: Rect2 = screen.roster_scroll.get_global_rect()
+		assert(card_rect.position.y >= scroll_rect.position.y - 1)
+		assert(card_rect.end.y <= scroll_rect.end.y + 1, "Selected driver must remain visible")
+	assert(screen.confirm_button.get_global_rect().end.y <= get_viewport().get_visible_rect().end.y)
+	screen.free()
 
 
 func _test_invalid_catalog_screens() -> void:

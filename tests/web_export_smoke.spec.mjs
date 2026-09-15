@@ -13,8 +13,8 @@ test("exported selection flow preserves roster and loadout", async ({ page }, te
   expect(status).toMatchObject({
     stage: "character_select",
     catalog_valid: true,
-    character_count: 4,
-    card_count: 4,
+    character_count: 8,
+    card_count: 8,
   });
 
   await page.locator("canvas").click({ position: { x: 10, y: 10 } });

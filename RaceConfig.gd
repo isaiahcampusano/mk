@@ -2,7 +2,7 @@ extends Node
 
 const DEFAULT_CHARACTER_ID := &"pip_spark"
 const DEFAULT_VEHICLE_ID := &"comet"
-const EXPECTED_CHARACTER_COUNT := 4
+const EXPECTED_CHARACTER_COUNT := 8
 const EXPECTED_VEHICLE_COUNT := 4
 
 const CHARACTER_CATALOG: Array[CharacterStats] = [
@@ -10,6 +10,10 @@ const CHARACTER_CATALOG: Array[CharacterStats] = [
 	preload("res://data/characters/nova_reed.tres"),
 	preload("res://data/characters/pip_spark.tres"),
 	preload("res://data/characters/rook_ember.tres"),
+	preload("res://data/characters/martian.tres"),
+	preload("res://data/characters/bruiser.tres"),
+	preload("res://data/characters/ledge_patroller.tres"),
+	preload("res://data/characters/walker.tres"),
 ]
 const VEHICLE_CATALOG: Array[VehicleStats] = [
 	preload("res://data/vehicles/comet.tres"),

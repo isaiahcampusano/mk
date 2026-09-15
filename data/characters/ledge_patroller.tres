@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="CharacterStats" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://data/CharacterStats.gd" id="1"]
+[ext_resource type="Texture2D" path="res://assets/portraits/ledge_patroller.tres" id="2"]
+
+[resource]
+script = ExtResource("1")
+character_id = &"ledge_patroller"
+character_name = "Ledge Patroller"
+portrait = ExtResource("2")
+driver_color = Color(1, 0.62, 0.26, 1)
+weight = 0.25
+base_speed_mod = 0.85
+base_accel_mod = 1.15
+base_handling_mod = 1.15

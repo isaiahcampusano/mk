@@ -39,7 +39,7 @@ the included GitHub Actions workflow.
 - Flat, unshaded low-poly geometry inspired by the readability of SNES racers
 - A smooth collision-aware chase camera plus an F3 whole-track debug camera
 - Low-poly karts, rotating item cubes, boost flames, and banana hazards
-- Four original drivers and four kart bodies backed by editable Godot Resources
+- Eight drivers (four original plus Martian, Bruiser, Ledge Patroller, and Walker) and four kart bodies backed by editable Godot Resources
 - A persistent driver → kart → countdown pre-race flow
 - Resolved loadout stats that scale speed, acceleration, handling, and drifting
 - Responsive acceleration, reverse, speed-scaled steering, hop, drift, and mini-turbo
